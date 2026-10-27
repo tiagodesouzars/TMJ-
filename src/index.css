@@ -1,0 +1,58 @@
+@import "tailwindcss";
+
+@theme {
+  --color-asphalt: #0d0d0f;
+  --color-concrete: #18181c;
+  --color-bunker: #222228;
+  --color-acid: #ccff00;
+  --color-urbanOrange: #ff5500;
+  --color-sprayCyan: #00e5ff;
+  --color-chalk: #f4f4f6;
+  --color-stencil: #8e8e99;
+
+  --font-display: "Anton", sans-serif;
+  --font-bebas: "Bebas Neue", sans-serif;
+  --font-sans: "Space Grotesk", sans-serif;
+  --font-mono: "JetBrains Mono", monospace;
+}
+
+* {
+  -webkit-tap-highlight-color: transparent;
+  box-sizing: border-box;
+}
+
+body {
+  background-color: #0d0d0f;
+  color: #f4f4f6;
+  font-family: 'Space Grotesk', sans-serif;
+  overflow-x: hidden;
+}
+
+/* Subtle Concrete Noise Background */
+.bg-concrete-texture {
+  background-color: #0d0d0f;
+  background-image: 
+    radial-gradient(rgba(204, 255, 0, 0.035) 1px, transparent 0),
+    radial-gradient(rgba(255, 85, 0, 0.025) 1px, #0d0d0f 0);
+  background-size: 24px 24px;
+  background-position: 0 0, 12px 12px;
+}
+
+/* Custom Scrollbars */
+::-webkit-scrollbar { width: 4px; height: 4px; }
+::-webkit-scrollbar-track { background: #0d0d0f; }
+::-webkit-scrollbar-thumb { background: #2e2e38; border-radius: 2px; }
+
+.no-scrollbar::-webkit-scrollbar { display: none; }
+.no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+
+/* Marquee Animation */
+@keyframes ticker {
+  0% { transform: translateX(100%); }
+  100% { transform: translateX(-100%); }
+}
+
+.animate-ticker {
+  display: inline-block;
+  animation: ticker 18s linear infinite;
+}

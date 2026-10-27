@@ -1,0 +1,70 @@
+{
+  "entities": {
+    "Member": {
+      "title": "Member",
+      "description": "Squad member profile (Tiago, Jorge, Marcus) for TMJ Vault & Chat",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Member ID" },
+        "name": { "type": "string", "description": "Display name of the member" },
+        "handle": { "type": "string", "description": "Username handle with @" },
+        "role": { "type": "string", "description": "Squad role / specialty" },
+        "color": { "type": "string", "description": "Streetwear theme hex color" },
+        "customAvatar": { "type": "string", "description": "Custom avatar URL or base64" },
+        "password": { "type": "string", "description": "PIN or access code" },
+        "email": { "type": "string", "description": "Member email" },
+        "updatedAt": { "type": "string", "description": "Last updated ISO timestamp" }
+      },
+      "required": ["id", "name", "handle", "role", "color"]
+    },
+    "VaultDrop": {
+      "title": "VaultDrop",
+      "description": "Media drop item in the shared TMJ Vault (photo, video, audio beat)",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Unique drop ID" },
+        "type": { "type": "string", "enum": ["photo", "video", "audio"], "description": "Media category" },
+        "title": { "type": "string", "description": "Title or headline of the drop" },
+        "caption": { "type": "string", "description": "Description or fit details" },
+        "url": { "type": "string", "description": "Media URL or embedded source" },
+        "authorId": { "type": "string", "description": "ID of member who posted" },
+        "authorName": { "type": "string", "description": "Name of author" },
+        "authorHandle": { "type": "string", "description": "Handle of author" },
+        "tag": { "type": "string", "description": "Tag category e.g. Fit Check, Sneakers, Rolê, Beat" },
+        "createdAt": { "type": "string", "description": "Creation timestamp" }
+      },
+      "required": ["id", "type", "title", "url", "authorId", "authorName", "createdAt"]
+    },
+    "ChatMessage": {
+      "title": "ChatMessage",
+      "description": "Chat message or voice note exchanged between the trio",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Unique message ID" },
+        "authorId": { "type": "string", "description": "Sender member ID" },
+        "authorName": { "type": "string", "description": "Sender display name" },
+        "authorHandle": { "type": "string", "description": "Sender @ handle" },
+        "text": { "type": "string", "description": "Text message content" },
+        "isAudio": { "type": "boolean", "description": "Whether message is a voice recording" },
+        "audioUrl": { "type": "string", "description": "Audio data URL if voice note" },
+        "audioDuration": { "type": "number", "description": "Duration in seconds" },
+        "timestamp": { "type": "string", "description": "Message timestamp" }
+      },
+      "required": ["id", "authorId", "authorName", "timestamp"]
+    }
+  },
+  "firestore": {
+    "/tmj_members/{memberId}": {
+      "schema": { "$ref": "#/entities/Member" },
+      "description": "Squad members list with customizable profiles and roles"
+    },
+    "/tmj_vault/{dropId}": {
+      "schema": { "$ref": "#/entities/VaultDrop" },
+      "description": "Shared streetwear vault media drops (photos, videos, audio beats)"
+    },
+    "/tmj_chat/{messageId}": {
+      "schema": { "$ref": "#/entities/ChatMessage" },
+      "description": "Real-time chat feed and voice recordings between the trio"
+    }
+  }
+}

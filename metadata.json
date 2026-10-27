@@ -1,0 +1,6 @@
+{
+  "name": "TMJ - Squad Vault & Chat",
+  "description": "Biblioteca compartilhada e chat streetwear para o trio TMJ salvar fotos, vídeos, áudios e resenha.",
+  "requestFramePermissions": ["microphone", "camera"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

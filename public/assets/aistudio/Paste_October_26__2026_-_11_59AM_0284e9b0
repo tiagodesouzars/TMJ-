@@ -1,0 +1,1126 @@
+<!DOCTYPE html>
+<html lang="pt-BR" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>TMJ</title>
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Google Fonts: Streetwear & Technical Mono -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Anton&family=Bebas+Neue&family=JetBrains+Mono:ital,wght@0,400;0,700;1,400&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
+    
+    <!-- Font Awesome Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        asphalt: '#0d0d0f',
+                        concrete: '#18181c',
+                        bunker: '#222228',
+                        acid: '#ccff00',
+                        urbanOrange: '#ff5500',
+                        sprayCyan: '#00e5ff',
+                        chalk: '#f4f4f6',
+                        stencil: '#8e8e99'
+                    },
+                    fontFamily: {
+                        display: ['Anton', 'sans-serif'],
+                        bebas: ['Bebas Neue', 'sans-serif'],
+                        sans: ['Space Grotesk', 'sans-serif'],
+                        mono: ['JetBrains Mono', 'monospace']
+                    }
+                }
+            }
+        }
+    </script>
+
+    <style>
+        * {
+            -webkit-tap-highlight-color: transparent;
+            box-sizing: border-box;
+        }
+
+        body {
+            background-color: #0d0d0f;
+            color: #f4f4f6;
+            font-family: 'Space Grotesk', sans-serif;
+            overflow-x: hidden;
+            user-select: none;
+        }
+
+        /* Subtle Concrete Noise Background */
+        .bg-concrete-texture {
+            background-color: #0d0d0f;
+            background-image: 
+                radial-gradient(rgba(204, 255, 0, 0.03) 1px, transparent 0),
+                radial-gradient(rgba(255, 85, 0, 0.025) 1px, #0d0d0f 0);
+            background-size: 24px 24px;
+            background-position: 0 0, 12px 12px;
+        }
+
+        /* Custom Scrollbars */
+        ::-webkit-scrollbar { width: 4px; height: 4px; }
+        ::-webkit-scrollbar-track { background: #0d0d0f; }
+        ::-webkit-scrollbar-thumb { background: #2e2e38; border-radius: 2px; }
+        
+        .no-scrollbar::-webkit-scrollbar { display: none; }
+        .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+
+        /* Marquee Animation */
+        @keyframes ticker {
+            0% { transform: translateX(100vw); }
+            100% { transform: translateX(-100%); }
+        }
+        .animate-ticker {
+            display: inline-block;
+            animation: ticker 15s linear infinite;
+        }
+    </style>
+</head>
+<body class="bg-black min-h-screen flex justify-center items-start selection:bg-acid selection:text-black">
+
+    <!-- TELA DE ENTRADA / SPLASH SCREEN -->
+    <div id="splash-screen" class="fixed inset-0 z-[100] flex flex-col items-center justify-center bg-asphalt bg-concrete-texture">
+        <div class="relative z-10 flex flex-col items-center text-center px-4">
+            <h1 class="font-display text-[7rem] text-acid tracking-widest mb-2" style="text-shadow: 4px 4px 0px #ff5500;">TMJ</h1>
+            <p class="font-mono text-stencil text-xs tracking-[0.3em] mb-12">RESENHA OU MORTE // TRIOTMJ</p>
+            
+            <button onclick="showLoginScreen()" class="bg-acid text-black font-display text-xl tracking-widest px-10 py-4 rounded-sm shadow-[6px_6px_0px_#ff5500] active:translate-y-1 active:shadow-[2px_2px_0px_#ff5500] transition-all cursor-pointer">
+                ENTRAR <i class="fa-solid fa-arrow-right ml-2"></i>
+            </button>
+        </div>
+    </div>
+
+    <!-- TELA DE LOGIN DO TRIO -->
+    <div id="login-screen" class="fixed inset-0 z-[90] hidden bg-concrete-texture flex flex-col items-center justify-center p-4">
+        <button type="button" onclick="openProjectInfoModal()" class="flex items-center gap-2 bg-bunker border border-neutral-800 hover:border-acid px-3 py-1 rounded-sm mb-3 transition-colors cursor-pointer">
+            <span id="db-login-dot" class="w-2 h-2 rounded-full bg-urbanOrange animate-pulse"></span>
+            <span id="db-login-status" class="font-mono text-[10px] text-stencil tracking-widest uppercase">CONECTANDO A TRIOTMJ-3187E...</span>
+        </button>
+        <h2 class="font-display text-5xl text-white mb-1">QUEM É VOCÊ?</h2>
+        <p class="font-mono text-xs text-acid mb-8 tracking-widest">ACESSO RESTRITO AO TRIO</p>
+        
+        <div id="login-users-grid" class="w-full max-w-[340px] space-y-3">
+            <!-- Populado via JS -->
+        </div>
+        
+        <!-- Modal Interno de Senha -->
+        <div id="password-prompt" class="absolute inset-x-4 bottom-4 bg-bunker border border-neutral-700 p-6 rounded-sm hidden shadow-2xl max-w-[340px] mx-auto z-50">
+            <div class="flex justify-between items-center mb-4 border-b border-neutral-800 pb-2">
+                <h3 id="pwd-title" class="font-display text-2xl text-white tracking-wide">DIGITE A SENHA</h3>
+                <button type="button" onclick="closePasswordPrompt()" class="w-8 h-8 rounded-sm bg-asphalt text-stencil"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+            <p id="pwd-subtitle" class="font-mono text-[10px] text-urbanOrange mb-4 tracking-wide uppercase">Primeiro acesso: Crie sua senha.</p>
+            
+            <input type="password" id="pwd-input" placeholder="••••••••" class="w-full bg-asphalt border-2 border-neutral-700 rounded-sm px-4 py-3 text-white mb-4 focus:border-acid focus:outline-none text-center tracking-[0.5em] font-mono text-lg" onkeypress="if(event.key === 'Enter') submitPassword()">
+            
+            <button type="button" id="pwd-submit-btn" onclick="submitPassword()" class="w-full bg-acid text-black font-display text-lg tracking-widest py-3 rounded-sm border border-black shadow-[4px_4px_0px_#000] active:translate-y-1 active:shadow-none transition-all">
+                CONFIRMAR
+            </button>
+        </div>
+    </div>
+
+    <!-- MOBILE-FIRST APP CONTAINER -->
+    <div id="app-shell" class="hidden w-full max-w-[460px] min-h-screen bg-concrete-texture border-x border-neutral-800/80 flex flex-col relative z-10 shadow-2xl pb-20">
+
+        <!-- HEADER BANNER MARQUEE -->
+        <div class="bg-acid text-black overflow-hidden py-1 border-b-2 border-black flex relative z-40">
+            <div class="font-display text-[11px] tracking-[0.2em] animate-ticker whitespace-nowrap">
+                +++ TMJ SQUAD VAULT +++ RESENHA OU MORTE +++ DAAAAMN +++ VOCE ME SENTE? +++ TMJ +++ APENAS ME DIGA QUEM VAI MORRER HOJE! +++ CONCEPT? +++
+            </div>
+        </div>
+
+        <!-- HEADER -->
+        <header class="sticky top-0 z-30 bg-asphalt/95 backdrop-blur-md border-b border-neutral-800 px-4 pt-3 pb-3">
+            <div class="flex items-center justify-between mb-3">
+                <div class="flex items-center gap-3">
+                    <span class="font-display text-3xl tracking-wider text-acid leading-none uppercase">TMJ</span>
+                    <button type="button" onclick="openProjectInfoModal()" title="Ver detalhes do projeto trioTMJ" class="flex items-center gap-1.5 bg-concrete border border-neutral-800 hover:border-acid px-2 py-0.5 rounded-sm transition-colors cursor-pointer">
+                        <span id="db-header-dot" class="w-1.5 h-1.5 rounded-full bg-acid"></span>
+                        <span id="db-header-status" class="font-mono text-[9px] text-stencil uppercase tracking-wider">triotmj-3187e // SYNC</span>
+                    </button>
+                </div>
+                <div class="flex items-center gap-2">
+                    <button type="button" onclick="openSquadModal()" class="bg-concrete border border-neutral-700 rounded-sm px-3 py-1.5 flex items-center gap-2 text-[10px] font-mono text-chalk shadow-[2px_2px_0px_#000] active:translate-y-[2px] active:shadow-none transition-all cursor-pointer">
+                        SQUAD ID <i class="fa-solid fa-id-badge text-acid"></i>
+                    </button>
+                    <button type="button" onclick="logoutUser()" title="Sair da conta" class="bg-bunker border border-neutral-700 rounded-sm w-8 h-7 flex items-center justify-center text-stencil hover:text-urbanOrange transition-colors cursor-pointer">
+                        <i class="fa-solid fa-right-from-bracket text-xs"></i>
+                    </button>
+                </div>
+            </div>
+
+            <!-- STREETWEAR BANNER -->
+            <div class="w-full h-28 sm:h-36 rounded-sm border-2 border-neutral-800 overflow-hidden relative group">
+                <div class="absolute inset-0 bg-acid/10 group-hover:bg-acid/0 transition-colors z-10 pointer-events-none mix-blend-overlay"></div>
+                <img src="https://images.unsplash.com/photo-1600880292203-757bb62b4baf?auto=format&fit=crop&q=80&w=800&h=250" alt="Streetwear Banner" class="w-full h-full object-cover grayscale opacity-80">
+                <div class="absolute bottom-2 left-2 font-display text-white/90 text-2xl tracking-widest drop-shadow-[2px_2px_0px_#000] z-20 pointer-events-none uppercase">
+                   TMJ
+                </div>
+            </div>
+        </header>
+
+        <!-- MAIN CONTENT AREA -->
+        <main class="flex-1 flex flex-col">
+
+            <!-- ==================== TAB 1: MIDIA DOS GURI (VAULT) ==================== -->
+            <section id="view-vault" class="flex-1 flex flex-col px-3 pt-4 pb-6">
+                <div class="flex items-center justify-between mb-4 px-1 border-b border-neutral-800 border-dashed pb-2">
+                    <h2 class="font-display text-2xl text-white uppercase tracking-wide">midia dos guri</h2>
+                    <span id="vault-count-badge" class="font-mono text-[10px] text-sprayCyan border border-sprayCyan/30 bg-sprayCyan/10 px-2 py-0.5 rounded-sm">0 DROPS</span>
+                </div>
+                <div id="vault-items-container" class="space-y-6">
+                    <!-- Rendered dynamically via JS -->
+                </div>
+            </section>
+
+            <!-- ==================== TAB 2: RESENHA (CHAT) ==================== -->
+            <section id="view-chat" class="hidden flex-1 flex flex-col h-[calc(100vh-190px)] px-3 pt-3">
+                <div class="mb-2 px-1 border-b border-neutral-800 border-dashed pb-2">
+                    <h2 class="font-display text-xl text-white uppercase tracking-wide">resenha ou morte</h2>
+                </div>
+
+                <div id="chat-messages-list" class="flex-1 overflow-y-auto space-y-4 pr-1 py-2">
+                    <!-- Populated via JS -->
+                </div>
+
+                <!-- Gírias Rápidas -->
+                <div class="py-2 flex items-center gap-2 w-full overflow-x-auto whitespace-nowrap snap-x no-scrollbar border-t border-neutral-800 px-1 mt-2 relative z-20" style="touch-action: pan-x;">
+                    <button type="button" onclick="sendQuickSticker('hoje é aonde?')" class="snap-start shrink-0 bg-concrete border border-neutral-700 text-chalk font-mono text-[10px] px-4 py-2 rounded-sm active:scale-95 transition hover:bg-neutral-800 cursor-pointer">hoje é aonde?</button>
+                    <button type="button" onclick="sendQuickSticker('resenha')" class="snap-start shrink-0 bg-concrete border border-neutral-700 text-chalk font-mono text-[10px] px-4 py-2 rounded-sm active:scale-95 transition hover:bg-neutral-800 cursor-pointer">resenha</button>
+                    <button type="button" onclick="sendQuickSticker('to off')" class="snap-start shrink-0 bg-concrete border border-neutral-700 text-chalk font-mono text-[10px] px-4 py-2 rounded-sm active:scale-95 transition hover:bg-neutral-800 cursor-pointer">to off</button>
+                    <button type="button" onclick="sendQuickSticker('concept?')" class="snap-start shrink-0 bg-concrete border border-neutral-700 text-chalk font-mono text-[10px] px-4 py-2 rounded-sm active:scale-95 transition hover:bg-neutral-800 cursor-pointer">concept?</button>
+                </div>
+
+                <!-- Chat Input System -->
+                <div class="bg-concrete border-2 border-neutral-800 rounded-sm p-2 mb-2">
+                    
+                    <!-- Estado 1: Padrão (Texto + Mídia + Mic) -->
+                    <div id="chat-default-bar" class="flex items-center gap-2">
+                        <label class="w-10 h-10 rounded-sm bg-bunker hover:bg-neutral-700 text-acid flex items-center justify-center cursor-pointer shrink-0 border border-neutral-700">
+                            <i class="fa-solid fa-camera"></i>
+                            <input type="file" accept="image/*,video/*" class="hidden" onchange="sendChatMedia(event)">
+                        </label>
+                        <input id="chat-input" type="text" placeholder="Manda o papo..." class="flex-1 bg-asphalt border border-neutral-800 rounded-sm px-3 py-2 text-sm text-white focus:outline-none focus:border-acid font-mono" onkeypress="if(event.key === 'Enter') handleChatSubmit()">
+                        <button type="button" onclick="startChatAudioRecord()" class="w-10 h-10 rounded-sm bg-bunker text-sprayCyan flex items-center justify-center shrink-0 border border-neutral-700 cursor-pointer">
+                            <i class="fa-solid fa-microphone"></i>
+                        </button>
+                        <button type="button" onclick="handleChatSubmit()" class="bg-acid text-black font-display tracking-widest px-4 py-2 rounded-sm text-sm shadow-[2px_2px_0px_#000] active:translate-y-[2px] active:shadow-none transition-all cursor-pointer">ENVIAR</button>
+                    </div>
+
+                    <!-- Estado 2: Gravando Áudio -->
+                    <div id="chat-recording-bar" class="hidden flex items-center justify-between gap-2 bg-bunker p-1 rounded-sm border border-urbanOrange">
+                        <div class="flex items-center gap-3 text-urbanOrange animate-pulse px-3">
+                            <i class="fa-solid fa-microphone text-lg"></i>
+                            <span id="chat-rec-timer" class="font-mono text-sm font-bold tracking-widest">00:00</span>
+                        </div>
+                        <button type="button" onclick="pauseChatAudioRecord()" class="bg-urbanOrange text-black font-display px-6 py-2 rounded-sm text-sm tracking-wider shadow-[2px_2px_0px_#000] active:translate-y-[2px] active:shadow-none cursor-pointer">PAUSAR</button>
+                    </div>
+
+                    <!-- Estado 3: Preview do Áudio (Ouvir, Excluir ou Enviar) -->
+                    <div id="chat-preview-bar" class="hidden flex items-center gap-2">
+                        <button type="button" onclick="discardChatAudio()" class="w-10 h-10 rounded-sm bg-red-500/10 text-red-500 border border-red-500/50 flex items-center justify-center shrink-0 cursor-pointer">
+                            <i class="fa-solid fa-trash"></i>
+                        </button>
+                        <div class="flex-1 bg-asphalt border border-sprayCyan/50 rounded-sm px-3 py-2 flex items-center justify-between">
+                            <span class="font-mono text-[10px] text-sprayCyan font-bold tracking-widest">ÁUDIO PRONTO</span>
+                            <button type="button" onclick="playPreviewAudio()" class="w-8 h-8 flex items-center justify-center bg-sprayCyan/20 text-sprayCyan rounded-sm cursor-pointer"><i id="chat-audio-play-icon" class="fa-solid fa-play"></i></button>
+                        </div>
+                        <button type="button" onclick="sendChatAudio()" class="bg-acid text-black font-display px-4 py-2 rounded-sm text-sm shrink-0 shadow-[2px_2px_0px_#000] active:translate-y-[2px] active:shadow-none cursor-pointer">ENVIAR 🚀</button>
+                    </div>
+
+                </div>
+            </section>
+        </main>
+
+        <!-- DOCK -->
+        <nav class="fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-[460px] z-40 bg-asphalt/95 backdrop-blur-lg border-t-2 border-neutral-800 px-4 py-2 flex items-center justify-around">
+            <button id="nav-vault" onclick="switchMainTab('vault')" class="flex flex-col items-center py-1 px-6 text-acid cursor-pointer">
+                <i class="fa-solid fa-layer-group text-xl mb-1"></i>
+                <span class="font-bebas tracking-widest text-xs">MÍDIAS</span>
+            </button>
+            <button onclick="openUploadModal()" class="-mt-8 bg-acid text-black font-display text-lg px-5 py-3 rounded-sm border-2 border-black shadow-[4px_4px_0px_#ff5500] active:translate-y-1 active:shadow-[1px_1px_0px_#ff5500] transition-all cursor-pointer">
+                + ADD MÍDIA
+            </button>
+            <button id="nav-chat" onclick="switchMainTab('chat')" class="flex flex-col items-center py-1 px-6 text-stencil cursor-pointer">
+                <i class="fa-solid fa-comments text-xl mb-1"></i>
+                <span class="font-bebas tracking-widest text-xs">RESENHA</span>
+            </button>
+        </nav>
+    </div>
+
+    <!-- MODAL: ADD MÍDIA PRO VAULT -->
+    <div id="modal-upload" class="fixed inset-0 z-50 hidden bg-black/90 backdrop-blur-md flex items-center justify-center p-4">
+        <div class="w-full max-w-[400px] bg-concrete border-2 border-neutral-700 rounded-sm p-5 shadow-2xl relative">
+            <div class="absolute -top-3 -right-3 w-12 h-6 bg-acid/80 rotate-12 z-10"></div>
+            
+            <div class="flex justify-between items-center mb-6 border-b border-neutral-800 pb-2 relative z-20">
+                <h3 class="font-display text-2xl text-white tracking-wide">NOVA MÍDIA</h3>
+                <button type="button" onclick="closeUploadModal()" class="text-stencil hover:text-white cursor-pointer"><i class="fa-solid fa-xmark text-2xl"></i></button>
+            </div>
+            
+            <label class="block w-full border-2 border-dashed border-neutral-700 rounded-sm p-4 text-center cursor-pointer bg-asphalt mb-4 hover:border-acid transition-colors">
+                <input type="file" id="file-input-media" accept="image/*,video/*" class="hidden" onchange="handleVaultFilePreview(event)">
+                <div id="upload-preview-placeholder" class="py-6">
+                    <i class="fa-solid fa-cloud-arrow-up text-4xl text-acid mb-3"></i>
+                    <p class="font-mono text-sm text-white font-bold tracking-widest uppercase">Toque para adicionar</p>
+                    <p class="font-mono text-[10px] text-stencil mt-1">FOTO OU VÍDEO (GIF SUPORTADO)</p>
+                </div>
+                <div id="upload-preview-box" class="hidden relative rounded-sm overflow-hidden max-h-56 flex items-center justify-center bg-black border border-neutral-800">
+                </div>
+            </label>
+
+            <label class="font-mono text-[10px] text-acid block mb-1 uppercase tracking-widest">Legenda do Drop</label>
+            <input id="upload-caption" type="text" placeholder="Escreva a legenda..." class="w-full bg-asphalt border-2 border-neutral-800 rounded-sm px-3 py-3 text-sm text-white mb-6 focus:border-acid focus:outline-none font-sans">
+            
+            <button type="button" onclick="submitVaultDrop()" class="w-full bg-acid text-black font-display text-xl tracking-widest py-3 rounded-sm border-2 border-black shadow-[4px_4px_0px_#000] active:translate-y-1 active:shadow-[1px_1px_0px_#000] transition-all cursor-pointer">
+                PUBLICAR NA MÍDIA
+            </button>
+        </div>
+    </div>
+
+    <!-- MODAL: SQUAD ID & PERFIL -->
+    <div id="modal-squad" class="fixed inset-0 z-50 hidden bg-black/90 backdrop-blur-md flex items-center justify-center p-4">
+        <div class="w-full max-w-[400px] bg-concrete border-2 border-neutral-700 rounded-sm p-5 shadow-2xl relative">
+            <div class="absolute -top-3 -left-3 w-12 h-6 bg-urbanOrange/80 -rotate-12 z-10"></div>
+            
+            <div class="flex items-center justify-between pb-2 mb-6 border-b border-neutral-800 relative z-20">
+                <h3 class="font-display text-2xl text-white tracking-wide">SQUAD ID</h3>
+                <button type="button" onclick="closeSquadModal()" class="text-stencil hover:text-white cursor-pointer"><i class="fa-solid fa-xmark text-2xl"></i></button>
+            </div>
+
+            <div id="squad-edit-form" class="space-y-6 mb-6">
+                <!-- Dynamically populated -->
+            </div>
+
+            <button type="button" onclick="saveSquadProfile()" class="w-full bg-acid text-black font-display text-xl tracking-widest py-3 rounded-sm border-2 border-black shadow-[4px_4px_0px_#000] active:translate-y-1 active:shadow-none transition-all cursor-pointer">
+                SALVAR ALTERAÇÕES
+            </button>
+        </div>
+    </div>
+
+    <!-- MODAL: STATUS DO PROJETO TRIOTMJ -->
+    <div id="modal-project-info" class="fixed inset-0 z-[110] hidden bg-black/90 backdrop-blur-md flex items-center justify-center p-4">
+        <div class="w-full max-w-[420px] bg-concrete border-2 border-neutral-700 rounded-sm p-5 shadow-2xl relative">
+            <div class="flex items-center justify-between pb-2 mb-4 border-b border-neutral-800">
+                <div>
+                    <span class="font-mono text-[10px] text-acid uppercase tracking-widest block">FIREBASE PROJECT CONFIG</span>
+                    <h3 class="font-display text-2xl text-white tracking-wide">PROJETO: trioTMJ</h3>
+                </div>
+                <button type="button" onclick="closeProjectInfoModal()" class="text-stencil hover:text-white cursor-pointer"><i class="fa-solid fa-xmark text-2xl"></i></button>
+            </div>
+
+            <div class="space-y-3 font-mono text-xs mb-4">
+                <div class="bg-asphalt border border-neutral-800 p-3 rounded-sm space-y-1.5">
+                    <div class="flex justify-between">
+                        <span class="text-stencil">Nome do projeto:</span>
+                        <span class="text-white font-bold">trioTMJ</span>
+                    </div>
+                    <div class="flex justify-between">
+                        <span class="text-stencil">ID do projeto:</span>
+                        <span class="text-acid font-bold">triotmj-3187e</span>
+                    </div>
+                    <div class="flex justify-between">
+                        <span class="text-stencil">Número do projeto:</span>
+                        <span class="text-sprayCyan">753227233872</span>
+                    </div>
+                </div>
+
+                <div class="bg-asphalt border border-neutral-800 p-3 rounded-sm">
+                    <p class="text-[10px] text-urbanOrange uppercase tracking-wider mb-1 font-bold">Coleções Firestore:</p>
+                    <ul class="text-[10px] text-chalk space-y-1">
+                        <li>• <span class="text-acid">tmj_members</span> (Senhas & Perfis do Trio)</li>
+                        <li>• <span class="text-acid">tmj_vault</span> (Mídias, Legendas & Comentários)</li>
+                        <li>• <span class="text-acid">tmj_chat</span> (Resenha, Áudios com Play/Pause)</li>
+                    </ul>
+                </div>
+
+                <div class="bg-asphalt border border-neutral-800 p-3 rounded-sm">
+                    <div class="flex items-center justify-between mb-1.5">
+                        <span class="text-[10px] text-stencil uppercase">Regras do Firestore:</span>
+                        <button type="button" onclick="copyFirestoreRules()" id="btn-copy-rules" class="bg-bunker border border-neutral-700 text-acid px-2 py-0.5 rounded-sm text-[9px] hover:border-acid cursor-pointer">COPIAR</button>
+                    </div>
+                    <pre id="firestore-rules-code" class="text-[9px] text-stencil bg-black p-2 rounded-sm overflow-x-auto leading-relaxed">rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /artifacts/{appId}/public/data/{col}/{docId} {
+      allow read, write: if true;
+    }
+  }
+}</pre>
+                </div>
+            </div>
+
+            <button type="button" onclick="closeProjectInfoModal()" class="w-full bg-acid text-black font-display text-lg tracking-widest py-2.5 rounded-sm border-2 border-black shadow-[4px_4px_0px_#000] cursor-pointer">
+                FECHAR
+            </button>
+        </div>
+    </div>
+
+    <!-- JS LOGIC -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, doc, setDoc, getDoc, collection, onSnapshot, updateDoc, deleteDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        // ============================================================================
+        // CONFIGURAÇÃO DO PROJETO FIREBASE: trioTMJ (ID: triotmj-3187e)
+        // ============================================================================
+        window.PROJECT_NAME = 'trioTMJ';
+        window.PROJECT_ID = 'triotmj-3187e';
+        window.PROJECT_NUMBER = '753227233872';
+
+        window.TRIO_TMJ_FIREBASE_CONFIG = {
+            apiKey: "",
+            authDomain: "triotmj-3187e.firebaseapp.com",
+            projectId: "triotmj-3187e",
+            storageBucket: "triotmj-3187e.firebasestorage.app",
+            messagingSenderId: "753227233872",
+            appId: "1:753227233872:web:triotmj"
+        };
+
+        window.squadMembers = [
+            { id: 't1', name: 'TIAGO', handle: '@tiago', role: 'Drip & Fit', color: '#ccff00', password: null, customAvatar: null },
+            { id: 'j2', name: 'JORGE', handle: '@jorge', role: 'Beats & Áudio', color: '#ff5500', password: null, customAvatar: null },
+            { id: 'm3', name: 'MARCUS', handle: '@marcus', role: 'Film & Skate', color: '#00e5ff', password: null, customAvatar: null }
+        ];
+
+        window.activeMember = null;
+        let selectedLoginUser = null;
+        window.vaultItems = [];
+        window.chatMessages = [];
+        window.isDbReady = false;
+
+        // ==================== NAVEGAÇÃO DE TELAS GLOBAL ====================
+        window.showLoginScreen = () => {
+            document.getElementById('splash-screen').classList.add('hidden');
+            document.getElementById('login-screen').classList.remove('hidden');
+            window.renderLoginUsers();
+        };
+
+        window.openProjectInfoModal = () => document.getElementById('modal-project-info').classList.remove('hidden');
+        window.closeProjectInfoModal = () => document.getElementById('modal-project-info').classList.add('hidden');
+        
+        window.copyFirestoreRules = () => {
+            const rulesText = document.getElementById('firestore-rules-code').innerText;
+            const tempArea = document.createElement('textarea');
+            tempArea.value = rulesText;
+            document.body.appendChild(tempArea);
+            tempArea.select();
+            document.execCommand('copy');
+            document.body.removeChild(tempArea);
+            const btn = document.getElementById('btn-copy-rules');
+            btn.textContent = 'COPIADO! ✓';
+            setTimeout(() => { btn.textContent = 'COPIAR'; }, 2000);
+        };
+
+        // RENDERIZAÇÃO DOS USUÁRIOS NA TELA DE LOGIN
+        window.renderLoginUsers = () => {
+            const grid = document.getElementById('login-users-grid');
+            if (!grid) return;
+            grid.innerHTML = '';
+
+            window.squadMembers.forEach(m => {
+                const hasPwd = m.password && m.password.trim() !== '';
+                const card = document.createElement('div');
+                card.className = "bg-asphalt border-2 border-neutral-800 hover:border-acid p-4 rounded-sm flex items-center justify-between cursor-pointer transition-all";
+                card.onclick = () => selectLoginMember(m.id);
+
+                const avatarHtml = m.customAvatar 
+                    ? `<img src="${m.customAvatar}" class="w-12 h-12 rounded-sm object-cover border" style="border-color:${m.color}">`
+                    : `<div class="w-12 h-12 rounded-sm flex items-center justify-center font-display text-xl bg-concrete" style="color:${m.color}">${m.name[0]}</div>`;
+
+                card.innerHTML = `
+                    <div class="flex items-center gap-3">
+                        ${avatarHtml}
+                        <div>
+                            <h4 class="font-display text-xl text-white tracking-wide">${m.name}</h4>
+                            <p class="font-mono text-[10px] text-stencil uppercase">${m.role || m.handle}</p>
+                        </div>
+                    </div>
+                    <div class="text-right">
+                        <span class="font-mono text-[9px] px-2 py-1 rounded-sm border ${hasPwd ? 'border-acid/40 text-acid bg-acid/10' : 'border-urbanOrange/40 text-urbanOrange bg-urbanOrange/10'}">
+                            ${hasPwd ? 'SENHA SALVA 🔒' : 'CRIAR SENHA ⚡'}
+                        </span>
+                    </div>
+                `;
+                grid.appendChild(card);
+            });
+        };
+
+        function selectLoginMember(memberId) {
+            selectedLoginUser = window.squadMembers.find(m => m.id === memberId);
+            const prompt = document.getElementById('password-prompt');
+            prompt.classList.remove('hidden');
+            const title = document.getElementById('pwd-title');
+            const sub = document.getElementById('pwd-subtitle');
+            const input = document.getElementById('pwd-input');
+            input.value = '';
+
+            if (!selectedLoginUser.password || selectedLoginUser.password.trim() === '') {
+                title.textContent = `CRIAR SENHA: ${selectedLoginUser.name}`;
+                sub.textContent = 'PRIMEIRO ACESSO: Digite sua nova senha.';
+            } else {
+                title.textContent = `LOGIN: ${selectedLoginUser.name}`;
+                sub.textContent = 'DIGITE SUA SENHA CADASTRADA.';
+            }
+            input.focus();
+        }
+
+        window.closePasswordPrompt = () => {
+            document.getElementById('password-prompt').classList.add('hidden');
+            selectedLoginUser = null;
+        };
+
+        window.submitPassword = async () => {
+            if (!selectedLoginUser) return;
+            const inputVal = document.getElementById('pwd-input').value;
+            if (!inputVal) return;
+
+            if (!selectedLoginUser.password || selectedLoginUser.password.trim() === '') {
+                selectedLoginUser.password = inputVal;
+                await persistMemberToFirestore(selectedLoginUser);
+                loginSuccess(selectedLoginUser);
+            } else {
+                if (selectedLoginUser.password === inputVal) {
+                    loginSuccess(selectedLoginUser);
+                } else {
+                    const title = document.getElementById('pwd-title');
+                    title.textContent = 'SENHA INCORRETA ❌';
+                    setTimeout(() => {
+                        title.textContent = `LOGIN: ${selectedLoginUser.name}`;
+                    }, 1500);
+                }
+            }
+        };
+
+        function loginSuccess(member) {
+            window.activeMember = member;
+            document.getElementById('login-screen').classList.add('hidden');
+            document.getElementById('password-prompt').classList.add('hidden');
+            document.getElementById('app-shell').classList.remove('hidden');
+            renderUI();
+        }
+
+        window.logoutUser = () => {
+            window.activeMember = null;
+            document.getElementById('app-shell').classList.add('hidden');
+            document.getElementById('login-screen').classList.remove('hidden');
+            window.renderLoginUsers();
+        };
+
+        async function persistMemberToFirestore(member) {
+            if (!window.isDbReady) return;
+            try {
+                const memberRef = doc(window.db, 'artifacts', window.appId, 'public', 'data', 'tmj_members', member.id);
+                await setDoc(memberRef, member, { merge: true });
+            } catch (err) {
+                console.error("Erro ao salvar membro no Firestore:", err);
+            }
+        }
+
+        // ==================== COMPRESSOR DE IMAGEM (Evita limite de 1MB do Firestore) ====================
+        function processMediaFileForFirestore(file, callback) {
+            if (file.type === 'image/gif' || file.type.startsWith('video/')) {
+                const reader = new FileReader();
+                reader.onload = (e) => callback(e.target.result);
+                reader.readAsDataURL(file);
+                return;
+            }
+            const reader = new FileReader();
+            reader.onload = (event) => {
+                const img = new Image();
+                img.onload = () => {
+                    const canvas = document.createElement('canvas');
+                    let width = img.width;
+                    let height = img.height;
+                    const maxDim = 800;
+                    if (width > height && width > maxDim) {
+                        height = Math.round((height * maxDim) / width);
+                        width = maxDim;
+                    } else if (height > maxDim) {
+                        width = Math.round((width * maxDim) / height);
+                        height = maxDim;
+                    }
+                    canvas.width = width;
+                    canvas.height = height;
+                    const ctx = canvas.getContext('2d');
+                    ctx.drawImage(img, 0, 0, width, height);
+                    callback(canvas.toDataURL('image/jpeg', 0.75));
+                };
+                img.src = event.target.result;
+            };
+            reader.readAsDataURL(file);
+        }
+
+        // ==================== NAVEGAÇÃO DE ABAS ====================
+        window.switchMainTab = (tab) => {
+            const vVault = document.getElementById('view-vault');
+            const vChat = document.getElementById('view-chat');
+            const nVault = document.getElementById('nav-vault');
+            const nChat = document.getElementById('nav-chat');
+
+            if (tab === 'vault') {
+                vVault.classList.remove('hidden');
+                vChat.classList.add('hidden');
+                nVault.className = "flex flex-col items-center py-1 px-6 text-acid cursor-pointer";
+                nChat.className = "flex flex-col items-center py-1 px-6 text-stencil cursor-pointer";
+                renderVault();
+            } else {
+                vVault.classList.add('hidden');
+                vChat.classList.remove('hidden');
+                nVault.className = "flex flex-col items-center py-1 px-6 text-stencil cursor-pointer";
+                nChat.className = "flex flex-col items-center py-1 px-6 text-acid cursor-pointer";
+                renderChat();
+            }
+        };
+
+        function renderUI() {
+            renderVault();
+            renderChat();
+        }
+
+        // ==================== VAULT (MÍDIA DOS GURI) ====================
+        let pendingUploadData = null;
+
+        window.openUploadModal = () => {
+            document.getElementById('modal-upload').classList.remove('hidden');
+            document.getElementById('upload-caption').value = '';
+            document.getElementById('file-input-media').value = '';
+            document.getElementById('upload-preview-placeholder').classList.remove('hidden');
+            document.getElementById('upload-preview-box').classList.add('hidden');
+            pendingUploadData = null;
+        };
+
+        window.closeUploadModal = () => document.getElementById('modal-upload').classList.add('hidden');
+
+        window.handleVaultFilePreview = (event) => {
+            const file = event.target.files[0];
+            if (!file) return;
+            processMediaFileForFirestore(file, (base64) => {
+                pendingUploadData = {
+                    type: file.type.startsWith('video') ? 'video' : 'image',
+                    url: base64
+                };
+                const box = document.getElementById('upload-preview-box');
+                box.classList.remove('hidden');
+                document.getElementById('upload-preview-placeholder').classList.add('hidden');
+                if (pendingUploadData.type === 'video') {
+                    box.innerHTML = `<video src="${base64}" class="w-full h-48 object-cover" controls></video>`;
+                } else {
+                    box.innerHTML = `<img src="${base64}" class="w-full h-48 object-cover">`;
+                }
+            });
+        };
+
+        window.submitVaultDrop = async () => {
+            if (!pendingUploadData) {
+                alert("Selecione uma foto ou vídeo para publicar.");
+                return;
+            }
+            const caption = document.getElementById('upload-caption').value.trim();
+            const newDrop = {
+                id: 'drop_' + Date.now() + '_' + Math.random().toString(36).substring(2, 6),
+                authorId: window.activeMember.id,
+                authorName: window.activeMember.name,
+                authorColor: window.activeMember.color,
+                type: pendingUploadData.type,
+                url: pendingUploadData.url,
+                caption: caption || 'Drop no Vault',
+                timestamp: Date.now(),
+                comments: []
+            };
+
+            if (window.isDbReady) {
+                try {
+                    await setDoc(doc(window.db, 'artifacts', window.appId, 'public', 'data', 'tmj_vault', newDrop.id), newDrop);
+                } catch (err) {
+                    console.error("Erro ao salvar no Firestore:", err);
+                }
+            } else {
+                window.vaultItems.unshift(newDrop);
+            }
+            closeUploadModal();
+            renderVault();
+        };
+
+        window.deleteVaultItem = async (docId) => {
+            if (window.isDbReady) {
+                try {
+                    await deleteDoc(doc(window.db, 'artifacts', window.appId, 'public', 'data', 'tmj_vault', docId));
+                } catch (err) {
+                    console.error("Erro ao excluir do Firestore:", err);
+                }
+            }
+            window.vaultItems = window.vaultItems.filter(item => (item.docId || item.id) !== docId);
+            renderVault();
+        };
+
+        window.addVaultComment = async (docId, event) => {
+            if (event.key !== 'Enter') return;
+            const input = event.target;
+            const text = input.value.trim();
+            if (!text) return;
+
+            const item = window.vaultItems.find(i => (i.docId || i.id) === docId);
+            if (!item) return;
+
+            if (!item.comments) item.comments = [];
+            item.comments.push({
+                author: window.activeMember.name,
+                color: window.activeMember.color,
+                text: text,
+                time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+            });
+
+            input.value = '';
+            if (window.isDbReady) {
+                try {
+                    await setDoc(doc(window.db, 'artifacts', window.appId, 'public', 'data', 'tmj_vault', docId), item, { merge: true });
+                } catch (err) {
+                    console.error("Erro ao salvar comentário:", err);
+                }
+            }
+            renderVault();
+        };
+
+        function renderVault() {
+            const container = document.getElementById('vault-items-container');
+            const badge = document.getElementById('vault-count-badge');
+            if (!container) return;
+
+            badge.textContent = `${window.vaultItems.length} DROPS`;
+            if (window.vaultItems.length === 0) {
+                container.innerHTML = `
+                    <div class="text-center py-16 bg-concrete border-2 border-dashed border-neutral-800 rounded-sm">
+                        <i class="fa-solid fa-ghost text-4xl text-stencil mb-3"></i>
+                        <p class="font-mono text-xs text-stencil uppercase tracking-widest">Nenhuma mídia no Vault ainda.</p>
+                    </div>
+                `;
+                return;
+            }
+
+            container.innerHTML = '';
+            window.vaultItems.sort((a, b) => b.timestamp - a.timestamp).forEach(item => {
+                const docId = item.docId || item.id;
+                const isMine = item.authorId === window.activeMember.id;
+                const card = document.createElement('div');
+                card.className = "bg-concrete border-2 border-neutral-800 rounded-sm overflow-hidden relative shadow-lg";
+
+                let mediaHtml = '';
+                if (item.type === 'video') {
+                    mediaHtml = `<video src="${item.url}" class="w-full max-h-96 object-cover" controls></video>`;
+                } else {
+                    mediaHtml = `<img src="${item.url}" class="w-full max-h-96 object-cover cursor-pointer" onclick="openFullMedia('${item.url}')">`;
+                }
+
+                let commentsHtml = '';
+                if (item.comments && item.comments.length > 0) {
+                    commentsHtml = item.comments.map(c => `
+                        <div class="text-xs font-mono py-1 border-b border-neutral-800 last:border-0 flex items-center justify-between">
+                            <div>
+                                <span class="font-bold mr-2 uppercase" style="color:${c.color}">${c.author}:</span>
+                                <span class="text-chalk">${c.text}</span>
+                            </div>
+                            <span class="text-[9px] text-stencil">${c.time}</span>
+                        </div>
+                    `).join('');
+                }
+
+                card.innerHTML = `
+                    <div class="p-3 bg-asphalt border-b border-neutral-800 flex items-center justify-between">
+                        <span class="font-display tracking-wide uppercase text-sm" style="color:${item.authorColor}">${item.authorName}</span>
+                        <span class="font-mono text-[9px] text-stencil">${new Date(item.timestamp).toLocaleDateString()}</span>
+                    </div>
+
+                    <div class="relative group bg-black">
+                        ${mediaHtml}
+                        <div class="absolute top-2 right-2 font-display text-[10px] tracking-widest bg-black/80 text-acid px-2 py-0.5 rounded-sm border border-acid/30 pointer-events-none">TMJ</div>
+                        ${isMine ? `<button onclick="deleteVaultItem('${docId}')" class="absolute top-2 left-2 w-9 h-9 bg-black/90 text-red-500 rounded-full border border-red-500/50 flex items-center justify-center hover:bg-red-500 hover:text-black transition cursor-pointer z-20"><i class="fa-solid fa-trash-can text-sm"></i></button>` : ''}
+                    </div>
+
+                    <div class="p-3 bg-concrete space-y-3">
+                        <p class="font-sans text-sm text-chalk">${item.caption || ''}</p>
+                        
+                        <!-- Thread de Comentários -->
+                        <div class="bg-asphalt border border-neutral-800 rounded-sm p-2 space-y-1 max-h-36 overflow-y-auto">
+                            ${commentsHtml || '<p class="font-mono text-[10px] text-stencil italic">Nenhum comentário na thread.</p>'}
+                        </div>
+                        <input type="text" placeholder="Responder no drop..." class="w-full bg-asphalt border border-neutral-800 rounded-sm px-3 py-2 text-xs text-white focus:border-acid focus:outline-none font-mono" onkeypress="addVaultComment('${docId}', event)">
+                    </div>
+                `;
+                container.appendChild(card);
+            });
+        }
+
+        window.openFullMedia = (url) => {
+            const w = window.open("");
+            w.document.write(`<body style="margin:0;background:#000;display:flex;align-items:center;justify-content:center;height:100vh;"><img src="${url}" style="max-width:100%;max-height:100%;"></body>`);
+        };
+
+        // ==================== CHAT (RESENHA) ====================
+        window.sendQuickSticker = (text) => {
+            document.getElementById('chat-input').value = text;
+            handleChatSubmit();
+        };
+
+        window.handleChatSubmit = async () => {
+            const input = document.getElementById('chat-input');
+            const text = input.value.trim();
+            if (!text) return;
+
+            const msg = {
+                id: 'msg_' + Date.now() + '_' + Math.random().toString(36).substring(2, 6),
+                authorId: window.activeMember.id,
+                authorName: window.activeMember.name,
+                authorColor: window.activeMember.color,
+                text: text,
+                timestamp: Date.now()
+            };
+
+            input.value = '';
+            if (window.isDbReady) {
+                try {
+                    await setDoc(doc(window.db, 'artifacts', window.appId, 'public', 'data', 'tmj_chat', msg.id), msg);
+                } catch (err) {
+                    console.error("Erro ao enviar mensagem no Firestore:", err);
+                }
+            } else {
+                window.chatMessages.push(msg);
+            }
+            renderChat();
+        };
+
+        window.sendChatMedia = (event) => {
+            const file = event.target.files[0];
+            if (!file) return;
+            processMediaFileForFirestore(file, async (base64) => {
+                const msg = {
+                    id: 'msg_' + Date.now() + '_' + Math.random().toString(36).substring(2, 6),
+                    authorId: window.activeMember.id,
+                    authorName: window.activeMember.name,
+                    authorColor: window.activeMember.color,
+                    mediaUrl: base64,
+                    mediaType: file.type.startsWith('video') ? 'video' : 'image',
+                    timestamp: Date.now()
+                };
+                if (window.isDbReady) {
+                    try {
+                        await setDoc(doc(window.db, 'artifacts', window.appId, 'public', 'data', 'tmj_chat', msg.id), msg);
+                    } catch (err) {
+                        console.error("Erro ao enviar mídia no chat:", err);
+                    }
+                } else {
+                    window.chatMessages.push(msg);
+                }
+                renderChat();
+            });
+        };
+
+        // Gravador de Áudio 3 Passos (Chat)
+        let chatMediaRecorder = null;
+        let chatAudioChunks = [];
+        let recordedAudioBlob = null;
+        let recordedAudioUrl = null;
+        let recSeconds = 0;
+        let recInterval = null;
+
+        window.startChatAudioRecord = async () => {
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                chatMediaRecorder = new MediaRecorder(stream);
+                chatAudioChunks = [];
+                chatMediaRecorder.ondataavailable = e => chatAudioChunks.push(e.data);
+                chatMediaRecorder.onstop = () => {
+                    recordedAudioBlob = new Blob(chatAudioChunks, { type: 'audio/webm' });
+                    recordedAudioUrl = URL.createObjectURL(recordedAudioBlob);
+                    document.getElementById('chat-recording-bar').classList.add('hidden');
+                    document.getElementById('chat-preview-bar').classList.remove('hidden');
+                };
+                chatMediaRecorder.start();
+                recSeconds = 0;
+                document.getElementById('chat-default-bar').classList.add('hidden');
+                document.getElementById('chat-recording-bar').classList.remove('hidden');
+                document.getElementById('chat-rec-timer').textContent = "00:00";
+                recInterval = setInterval(() => {
+                    recSeconds++;
+                    const m = String(Math.floor(recSeconds / 60)).padStart(2, '0');
+                    const s = String(recSeconds % 60).padStart(2, '0');
+                    const timerEl = document.getElementById('chat-rec-timer');
+                    if (timerEl) timerEl.textContent = `${m}:${s}`;
+                }, 1000);
+            } catch (err) {
+                alert("Permissão de microfone negada ou indisponível.");
+            }
+        };
+
+        window.pauseChatAudioRecord = () => {
+            if (chatMediaRecorder && chatMediaRecorder.state !== 'inactive') {
+                clearInterval(recInterval);
+                chatMediaRecorder.stop();
+                chatMediaRecorder.stream.getTracks().forEach(t => t.stop());
+            }
+        };
+
+        window.discardChatAudio = () => {
+            recordedAudioBlob = null;
+            recordedAudioUrl = null;
+            document.getElementById('chat-preview-bar').classList.add('hidden');
+            document.getElementById('chat-default-bar').classList.remove('hidden');
+        };
+
+        window.playPreviewAudio = () => {
+            if (!recordedAudioUrl) return;
+            const audio = new Audio(recordedAudioUrl);
+            const icon = document.getElementById('chat-audio-play-icon');
+            icon.className = "fa-solid fa-pause";
+            audio.play();
+            audio.onended = () => { icon.className = "fa-solid fa-play"; };
+        };
+
+        window.sendChatAudio = () => {
+            if (!recordedAudioBlob) return;
+            const reader = new FileReader();
+            reader.readAsDataURL(recordedAudioBlob);
+            reader.onloadend = async () => {
+                const base64Audio = reader.result;
+                const msg = {
+                    id: 'msg_' + Date.now() + '_' + Math.random().toString(36).substring(2, 6),
+                    authorId: window.activeMember.id,
+                    authorName: window.activeMember.name,
+                    authorColor: window.activeMember.color,
+                    audioUrl: base64Audio,
+                    duration: recSeconds,
+                    timestamp: Date.now()
+                };
+                if (window.isDbReady) {
+                    try {
+                        await setDoc(doc(window.db, 'artifacts', window.appId, 'public', 'data', 'tmj_chat', msg.id), msg);
+                    } catch (err) {
+                        console.error("Erro ao enviar áudio:", err);
+                    }
+                } else {
+                    window.chatMessages.push(msg);
+                }
+                discardChatAudio();
+                renderChat();
+            };
+        };
+
+        window.togglePlayChatAudio = (audioId, duration) => {
+            const audioEl = document.getElementById(`audio_${audioId}`);
+            const btnEl = document.getElementById(`btn_play_${audioId}`);
+            const progEl = document.getElementById(`prog_${audioId}`);
+            const timeEl = document.getElementById(`time_${audioId}`);
+
+            if (audioEl.paused) {
+                audioEl.play();
+                btnEl.innerHTML = `<i class="fa-solid fa-pause"></i>`;
+                const updateProg = () => {
+                    if (!audioEl.paused) {
+                        const pct = (audioEl.currentTime / audioEl.duration) * 100;
+                        if (progEl) progEl.style.width = `${pct}%`;
+                        const curMin = String(Math.floor(audioEl.currentTime / 60)).padStart(2, '0');
+                        const curSec = String(Math.floor(audioEl.currentTime % 60)).padStart(2, '0');
+                        if (timeEl) timeEl.textContent = `${curMin}:${curSec}`;
+                        requestAnimationFrame(updateProg);
+                    }
+                };
+                updateProg();
+                audioEl.onended = () => {
+                    btnEl.innerHTML = `<i class="fa-solid fa-play"></i>`;
+                    if (progEl) progEl.style.width = '0%';
+                    if (timeEl) timeEl.textContent = `00:${String(duration || 0).padStart(2, '0')}`;
+                };
+            } else {
+                audioEl.pause();
+                btnEl.innerHTML = `<i class="fa-solid fa-play"></i>`;
+            }
+        };
+
+        function renderChat() {
+            const list = document.getElementById('chat-messages-list');
+            if (!list) return;
+
+            if (window.chatMessages.length === 0) {
+                list.innerHTML = `
+                    <div class="text-center py-10">
+                        <p class="font-mono text-xs text-stencil uppercase tracking-widest">A resenha começou. Manda o papo!</p>
+                    </div>
+                `;
+                return;
+            }
+
+            list.innerHTML = '';
+            window.chatMessages.sort((a, b) => a.timestamp - b.timestamp).forEach(m => {
+                const bubble = document.createElement('div');
+                const isMine = m.authorId === window.activeMember.id;
+                bubble.className = `flex flex-col ${isMine ? 'items-end' : 'items-start'} space-y-1`;
+
+                let contentHtml = '';
+                if (m.text) {
+                    contentHtml = `<p class="text-sm font-sans text-chalk">${m.text}</p>`;
+                } else if (m.mediaUrl) {
+                    contentHtml = `<img src="${m.mediaUrl}" class="rounded-sm max-h-48 object-cover cursor-pointer" onclick="openFullMedia('${m.mediaUrl}')">`;
+                } else if (m.audioUrl) {
+                    const durStr = `00:${String(m.duration || 5).padStart(2, '0')}`;
+                    contentHtml = `
+                        <div class="flex items-center gap-3 bg-asphalt border border-sprayCyan/40 p-2 rounded-sm w-56">
+                            <audio id="audio_${m.id}" src="${m.audioUrl}" preload="metadata"></audio>
+                            <button id="btn_play_${m.id}" onclick="togglePlayChatAudio('${m.id}', ${m.duration || 5})" class="w-9 h-9 rounded-sm bg-sprayCyan/20 text-sprayCyan flex items-center justify-center shrink-0 cursor-pointer">
+                                <i class="fa-solid fa-play"></i>
+                            </button>
+                            <div class="flex-1 space-y-1">
+                                <div class="w-full bg-neutral-800 h-1.5 rounded-full overflow-hidden">
+                                    <div id="prog_${m.id}" class="bg-acid h-full w-0 transition-all"></div>
+                                </div>
+                                <div class="flex justify-between font-mono text-[9px] text-stencil">
+                                    <span id="time_${m.id}">00:00</span>
+                                    <span>${durStr}</span>
+                                </div>
+                            </div>
+                        </div>
+                    `;
+                }
+
+                bubble.innerHTML = `
+                    <div class="flex items-center gap-2">
+                        <span class="font-mono text-[10px] uppercase font-bold" style="color:${m.authorColor}">${m.authorName}</span>
+                        <span class="font-mono text-[9px] text-stencil">${new Date(m.timestamp).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}</span>
+                    </div>
+                    <div class="bg-concrete border border-neutral-800 rounded-sm p-3 max-w-[85%] shadow-md">
+                        ${contentHtml}
+                    </div>
+                `;
+                list.appendChild(bubble);
+            });
+            list.scrollTop = list.scrollHeight;
+        }
+
+        // ==================== MODAL SQUAD ID ====================
+        window.openSquadModal = () => {
+            document.getElementById('modal-squad').classList.remove('hidden');
+            const form = document.getElementById('squad-edit-form');
+            form.innerHTML = '';
+
+            window.squadMembers.forEach(m => {
+                const isCurrent = m.id === window.activeMember.id;
+                const div = document.createElement('div');
+                div.className = `bg-asphalt border ${isCurrent ? 'border-acid' : 'border-neutral-800'} p-3 rounded-sm space-y-2`;
+                div.innerHTML = `
+                    <div class="flex items-center justify-between">
+                        <span class="font-display text-lg" style="color:${m.color}">${m.name} ${isCurrent ? '(Você)' : ''}</span>
+                        <span class="font-mono text-[9px] text-stencil uppercase">${m.handle}</span>
+                    </div>
+                    ${isCurrent ? `
+                        <label class="block font-mono text-[9px] text-acid uppercase tracking-widest">Sua Tag Personalizada:</label>
+                        <input type="text" id="edit_role_${m.id}" value="${m.role || ''}" class="w-full bg-concrete border border-neutral-700 rounded-sm px-2 py-1.5 text-xs text-white font-mono focus:border-acid focus:outline-none">
+                        
+                        <label class="block font-mono text-[9px] text-acid uppercase tracking-widest mt-2">Avatar ou GIF URL:</label>
+                        <input type="text" id="edit_avatar_${m.id}" value="${m.customAvatar || ''}" placeholder="Cole URL de imagem ou GIF" class="w-full bg-concrete border border-neutral-700 rounded-sm px-2 py-1.5 text-xs text-white font-mono focus:border-acid focus:outline-none">
+                    ` : `
+                        <p class="font-mono text-[10px] text-chalk">Tag: ${m.role || 'Membro do Trio'}</p>
+                    `}
+                `;
+                form.appendChild(div);
+            });
+        };
+
+        window.closeSquadModal = () => document.getElementById('modal-squad').classList.add('hidden');
+
+        window.saveSquadProfile = async () => {
+            const roleInput = document.getElementById(`edit_role_${window.activeMember.id}`);
+            const avatarInput = document.getElementById(`edit_avatar_${window.activeMember.id}`);
+            if (roleInput) window.activeMember.role = roleInput.value.trim();
+            if (avatarInput) window.activeMember.customAvatar = avatarInput.value.trim();
+
+            const idx = window.squadMembers.findIndex(m => m.id === window.activeMember.id);
+            if (idx !== -1) window.squadMembers[idx] = window.activeMember;
+
+            await persistMemberToFirestore(window.activeMember);
+            closeSquadModal();
+            renderUI();
+        };
+
+        // ==================== INICIALIZAÇÃO FIREBASE (trioTMJ) ====================
+        window.addEventListener('DOMContentLoaded', async () => {
+            try {
+                window.appId = typeof __app_id !== 'undefined' ? __app_id : window.PROJECT_ID;
+                
+                let firebaseConfig = null;
+                if (window.TRIO_TMJ_FIREBASE_CONFIG && window.TRIO_TMJ_FIREBASE_CONFIG.apiKey.trim() !== "") {
+                    firebaseConfig = window.TRIO_TMJ_FIREBASE_CONFIG;
+                } else if (typeof __firebase_config !== 'undefined' && __firebase_config) {
+                    firebaseConfig = JSON.parse(__firebase_config);
+                }
+
+                if (firebaseConfig) {
+                    const app = initializeApp(firebaseConfig);
+                    const auth = getAuth(app);
+                    window.db = getFirestore(app);
+
+                    if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token && !window.TRIO_TMJ_FIREBASE_CONFIG.apiKey) {
+                        await signInWithCustomToken(auth, __initial_auth_token);
+                    } else {
+                        await signInAnonymously(auth);
+                    }
+
+                    window.currentUser = auth.currentUser;
+                    if (!window.currentUser) return;
+
+                    window.isDbReady = true;
+
+                    // Sincroniza membros
+                    const membersColRef = collection(window.db, 'artifacts', window.appId, 'public', 'data', 'tmj_members');
+                    onSnapshot(membersColRef, async (snap) => {
+                        if (snap.empty) {
+                            for (const m of window.squadMembers) {
+                                await persistMemberToFirestore(m);
+                            }
+                        } else {
+                            snap.docs.forEach(d => {
+                                const data = d.data();
+                                const idx = window.squadMembers.findIndex(m => m.id === data.id);
+                                if (idx !== -1) {
+                                    window.squadMembers[idx] = { ...window.squadMembers[idx], ...data };
+                                }
+                            });
+                        }
+                        if (!document.getElementById('login-screen').classList.contains('hidden')) {
+                            window.renderLoginUsers();
+                        }
+                    });
+
+                    // Sincroniza Vault
+                    const vaultColRef = collection(window.db, 'artifacts', window.appId, 'public', 'data', 'tmj_vault');
+                    onSnapshot(vaultColRef, (snap) => {
+                        window.vaultItems = snap.docs.map(d => ({ ...d.data(), docId: d.id }));
+                        if (!document.getElementById('app-shell').classList.contains('hidden')) {
+                            renderVault();
+                        }
+                    });
+
+                    // Sincroniza Chat
+                    const chatColRef = collection(window.db, 'artifacts', window.appId, 'public', 'data', 'tmj_chat');
+                    onSnapshot(chatColRef, (snap) => {
+                        window.chatMessages = snap.docs.map(d => ({ ...d.data(), docId: d.id }));
+                        if (!document.getElementById('app-shell').classList.contains('hidden')) {
+                            renderChat();
+                        }
+                    });
+                }
+            } catch (err) {
+                console.error("Modo local ativo:", err);
+            }
+        });
+    </script>
+</body>
+</html>
