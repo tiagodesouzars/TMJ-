@@ -1045,7 +1045,7 @@ export default function App() {
           {/* HEADER BANNER MARQUEE */}
           <div className="bg-acid text-black overflow-hidden py-1 border-b-2 border-black flex relative z-40">
             <div className="font-mono text-[10px] sm:text-[11px] font-semibold tracking-[0.22em] animate-ticker whitespace-nowrap uppercase">
-              +++ TMJ SQUAD VAULT +++ RESENHA OU MORTE +++ DAAAAMN +++ VOCE ME SENTE? +++ TMJ +++ APENAS ME DIGA QUEM VAI MORRER HOJE! +++ CONCEPT? +++
+              +++ TMJ  +++ RESENHA OU MORTE +++ DAAAAMN +++ VOCE ME SENTE? +++ TMJ +++ APENAS ME DIGA QUEM VAI MORRER HOJE! +++ CONCEPT? +++
             </div>
           </div>
 
