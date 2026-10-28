@@ -148,6 +148,10 @@ export default function App() {
   const chatBottomAnchorRef = useRef<HTMLDivElement>(null);
   const fileInputChatRef = useRef<HTMLInputElement>(null);
   const [virtualKeyboardHeight, setVirtualKeyboardHeight] = useState(0);
+  const [isChatInputFocused, setIsChatInputFocused] = useState(false);
+  const initialWindowHeightRef = useRef<number>(typeof window !== 'undefined' ? window.innerHeight : 800);
+
+  const isKeyboardOpen = isChatInputFocused || virtualKeyboardHeight > 0;
 
   const appId = 'triotmj-3187e';
 
@@ -232,46 +236,48 @@ export default function App() {
   // Dynamic visual viewport detection for mobile virtual keyboard
   useEffect(() => {
     if (typeof window === 'undefined') return;
+    initialWindowHeightRef.current = Math.max(window.innerHeight, initialWindowHeightRef.current);
 
     const handleVisualViewportResize = () => {
-      if (!window.visualViewport) return;
-      const windowHeight = window.innerHeight;
-      const viewportHeight = window.visualViewport.height;
-      const keyboardOffset = Math.max(0, Math.round(windowHeight - viewportHeight));
+      const viewportHeight = window.visualViewport ? window.visualViewport.height : window.innerHeight;
+      const baseHeight = Math.max(window.innerHeight, initialWindowHeightRef.current);
+      const keyboardOffset = Math.max(0, Math.round(baseHeight - viewportHeight));
 
-      // Trigger dynamic offset only when on-screen keyboard is open (offset > 100px)
-      if (keyboardOffset > 100) {
+      if (keyboardOffset > 110) {
         setVirtualKeyboardHeight(keyboardOffset);
       } else {
         setVirtualKeyboardHeight(0);
+        if ( document.activeElement?.id !== 'chat-input') {
+          setIsChatInputFocused(false);
+        }
       }
     };
 
     window.visualViewport?.addEventListener('resize', handleVisualViewportResize);
-    window.visualViewport?.addEventListener('scroll', handleVisualViewportResize);
+    window.addEventListener('resize', handleVisualViewportResize);
 
     return () => {
       window.visualViewport?.removeEventListener('resize', handleVisualViewportResize);
-      window.visualViewport?.removeEventListener('scroll', handleVisualViewportResize);
+      window.removeEventListener('resize', handleVisualViewportResize);
     };
   }, []);
 
-  // Enhanced auto-scroll chat ensuring bottom messages have safety space
+  // Auto-scroll chat on new messages or tab open without locking manual scroll
   const scrollChatToBottom = (smooth = true) => {
-    if (chatBottomAnchorRef.current) {
-      chatBottomAnchorRef.current.scrollIntoView({ behavior: smooth ? 'smooth' : 'auto', block: 'end' });
-    } else if (chatListRef.current) {
-      chatListRef.current.scrollTop = chatListRef.current.scrollHeight;
+    if (chatListRef.current) {
+      chatListRef.current.scrollTo({
+        top: chatListRef.current.scrollHeight,
+        behavior: smooth ? 'smooth' : 'auto'
+      });
     }
   };
 
   useEffect(() => {
     if (activeTab === 'chat') {
-      scrollChatToBottom(false);
-      const timer = setTimeout(() => scrollChatToBottom(false), 50);
+      const timer = setTimeout(() => scrollChatToBottom(false), 60);
       return () => clearTimeout(timer);
     }
-  }, [chatMessages, activeTab, virtualKeyboardHeight]);
+  }, [chatMessages.length, activeTab]);
 
 
   // Keep activeMember and selectedLoginUser in sync with freshest squad state
@@ -1090,17 +1096,24 @@ export default function App() {
 
       {/* ==================== 3. MOBILE-FIRST APP CONTAINER ==================== */}
       {currentScreen === 'app' && activeMember && (
-        <div id="app-shell" className={`w-full max-w-[460px] min-h-screen bg-concrete-texture border-x border-bunker/80 flex flex-col relative z-10 shadow-2xl ${virtualKeyboardHeight > 0 ? 'pb-2' : 'pb-20'}`}>
+        <div
+          id="app-shell"
+          className={`w-full max-w-[460px] bg-concrete-texture border-x border-bunker/80 flex flex-col relative z-10 shadow-2xl ${
+            activeTab === 'chat'
+              ? 'h-[100dvh] max-h-[100dvh] overflow-hidden'
+              : 'min-h-screen pb-20'
+          }`}
+        >
           
           {/* HEADER BANNER MARQUEE */}
-          <div className="bg-acid text-asphalt overflow-hidden py-1 border-b-2 border-asphalt flex relative z-40">
+          <div className="bg-acid text-asphalt overflow-hidden py-1 border-b-2 border-asphalt flex relative z-40 shrink-0">
             <div className="font-mono text-[10px] sm:text-[11px] font-semibold tracking-[0.22em] animate-ticker whitespace-nowrap uppercase">
               +++ TRIO TMJ  +++ RESENHA OU MORTE +++ DAAAAMN +++ VOCE ME SENTE? +++ TMJ +++ APENAS ME DIGA QUEM VAI MORRER HOJE! +++ CONCEPT? +++
             </div>
           </div>
 
           {/* HEADER (SEM BANNER, VISUAL LIMPO E OTIMIZADO PARA O CONTEÚDO) */}
-          <header className="sticky top-0 z-30 bg-asphalt/95 backdrop-blur-md border-b border-bunker px-4 py-2.5">
+          <header className="sticky top-0 z-30 bg-asphalt/95 backdrop-blur-md border-b border-bunker px-4 py-2.5 shrink-0">
             <div className="flex items-center justify-between">
               <img
                 src={TMJ_LOGO_URL}
@@ -1133,7 +1146,7 @@ export default function App() {
           </header>
 
           {/* MAIN CONTENT AREA */}
-          <main className="flex-1 flex flex-col min-h-0">
+          <main className={`flex-1 flex flex-col min-h-0 ${activeTab === 'chat' ? 'overflow-hidden' : ''}`}>
             {/* ==================== TAB 1: MIDIA DOS GURI (VAULT) ==================== */}
             {activeTab === 'vault' && (
               <section id="view-vault" className="flex-1 flex flex-col px-3 pt-4 pb-6">
@@ -1345,24 +1358,20 @@ export default function App() {
 
             {/* ==================== TAB 2: RESENHA (CHAT) ==================== */}
             {activeTab === 'chat' && (
-              <section 
-                id="view-chat" 
-                style={{
-                  paddingBottom: virtualKeyboardHeight > 0 
-                    ? `${virtualKeyboardHeight + 12}px` 
-                    : 'calc(1.5rem + env(safe-area-inset-bottom, 0px))',
-                  transition: 'padding-bottom 0.15s ease-out'
-                }}
-                className="flex-1 flex flex-col min-h-0 justify-between px-3 pt-3 overflow-hidden"
+              <section
+                id="view-chat"
+                className={`flex-1 flex flex-col min-h-0 justify-between px-3 pt-2.5 overflow-hidden transition-all duration-150 ${
+                  isKeyboardOpen ? 'pb-1.5' : 'pb-[68px]'
+                }`}
               >
-                <div className="mb-2 px-1 border-b border-bunker border-dashed pb-2 shrink-0">
+                <div className="mb-1.5 px-1 border-b border-bunker border-dashed pb-1.5 shrink-0">
                   <h2 className="font-display text-xl text-chalk uppercase tracking-wide">resenha ou morte</h2>
                 </div>
 
-                <div 
-                  ref={chatListRef} 
-                  id="chat-messages-list" 
-                  className="flex-1 min-h-0 overflow-y-auto space-y-4 pr-1 py-2 pb-6 overscroll-contain"
+                <div
+                  ref={chatListRef}
+                  id="chat-messages-list"
+                  className="flex-1 min-h-0 overflow-y-auto overscroll-y-contain touch-pan-y space-y-4 pr-1 py-2 pb-4"
                 >
                   {chatMessages.length === 0 ? (
                     <div className="text-center py-10">
@@ -1379,7 +1388,7 @@ export default function App() {
                       const resolvedAuthorColor = normalizeSquadColor(m.authorColor);
 
                       return (
-                        <div key={m.id} className={`flex items-start gap-2.5 ${isMine ? 'flex-row-reverse self-end' : 'self-start'} max-w-[92%]`}>
+                        <div key={m.id} className={`flex items-start gap-2.5 ${isMine ? 'flex-row-reverse ml-auto' : 'mr-auto'} max-w-[92%]`}>
                           {/* FOTO DE PERFIL DO AUTOR DA MENSAGEM */}
                           <div className="shrink-0 mt-1">
                             {avatarUrl ? (
@@ -1422,7 +1431,7 @@ export default function App() {
                             </div>
 
                             <div className="bg-concrete border border-bunker rounded-sm p-3 shadow-md relative group">
-                              {m.text && <p className="text-sm font-sans text-chalk leading-relaxed">{m.text}</p>}
+                              {m.text && <p className="text-sm font-sans text-chalk leading-relaxed break-words">{m.text}</p>}
 
                               {m.mediaUrl && (
                                 <div className="relative group/media mt-1">
@@ -1489,143 +1498,155 @@ export default function App() {
                       );
                     })
                   )}
-                  {/* Anchor e espaço de segurança garantido para teclado aberto */}
-                  <div ref={chatBottomAnchorRef} className="h-4 shrink-0" />
+                  <div ref={chatBottomAnchorRef} className="h-2 shrink-0" />
                 </div>
 
-                {/* Gírias Rápidas */}
-                <div className="py-2 flex items-center gap-2 w-full overflow-x-auto whitespace-nowrap snap-x no-scrollbar border-t border-bunker px-1 mt-1 shrink-0 relative z-20">
-                  {['hoje é aonde?', 'resenha', 'to off', 'concept?'].map((stk) => (
-                    <button
-                      key={stk}
-                      type="button"
-                      onClick={() => handleChatSubmit(stk)}
-                      className="snap-start shrink-0 bg-concrete border border-bunker text-chalk font-mono text-[10px] px-4 py-2 rounded-sm active:scale-95 transition hover:bg-bunker cursor-pointer"
-                    >
-                      {stk}
-                    </button>
-                  ))}
-                </div>
-
-                {/* Chat Input System */}
-                <div className="bg-concrete border-2 border-bunker rounded-sm p-2 mb-2 shrink-0">
-                  {/* Estado 1: Padrão */}
-                  {chatRecordingState === 'default' && (
-                    <div id="chat-default-bar" className="flex items-center gap-2">
-                      <label 
-                        title="Enviar Foto, Vídeo ou Áudio" 
-                        className="w-10 h-10 rounded-sm bg-bunker hover:bg-concrete text-acid flex items-center justify-center cursor-pointer shrink-0 border border-bunker"
+                {/* ÁREA FIXA DE DIGITAÇÃO (Gírias Rápidas + Barra de Input Coesa) */}
+                <div className="shrink-0 w-full bg-asphalt/95 backdrop-blur-md border-t border-bunker pt-1.5 pb-1 z-20">
+                  {/* Gírias Rápidas */}
+                  <div className="pb-1.5 flex items-center gap-1.5 w-full overflow-x-auto whitespace-nowrap snap-x no-scrollbar px-0.5">
+                    {['hoje é aonde?', 'resenha', 'to off', 'concept?'].map((stk) => (
+                      <button
+                        key={stk}
+                        type="button"
+                        onMouseDown={(e) => e.preventDefault()}
+                        onClick={() => handleChatSubmit(stk)}
+                        className="snap-start shrink-0 bg-concrete border border-bunker text-chalk font-mono text-[10px] px-3 py-1.5 rounded-sm active:scale-95 transition hover:bg-bunker cursor-pointer"
                       >
-                        <Camera className="w-4 h-4" />
-                        <input 
-                          ref={fileInputChatRef} 
-                          type="file" 
-                          accept="image/*,video/*,audio/*" 
-                          className="hidden" 
-                          onChange={sendChatMedia} 
+                        {stk}
+                      </button>
+                    ))}
+                  </div>
+
+                  {/* Chat Input System */}
+                  <div className="bg-concrete border-2 border-bunker rounded-sm p-1.5 w-full">
+                    {/* Estado 1: Padrão */}
+                    {chatRecordingState === 'default' && (
+                      <div id="chat-default-bar" className="flex items-center gap-1.5 sm:gap-2 w-full">
+                        <label 
+                          title="Enviar Foto, Vídeo ou Áudio" 
+                          className="w-9 h-9 sm:w-10 sm:h-10 rounded-sm bg-bunker hover:bg-concrete text-acid flex items-center justify-center cursor-pointer shrink-0 border border-bunker"
+                        >
+                          <Camera className="w-4 h-4" />
+                          <input 
+                            ref={fileInputChatRef} 
+                            type="file" 
+                            accept="image/*,video/*,audio/*" 
+                            className="hidden" 
+                            onChange={sendChatMedia} 
+                          />
+                        </label>
+                        <input
+                          id="chat-input"
+                          type="text"
+                          placeholder="Manda o papo..."
+                          value={chatInput}
+                          onFocus={() => {
+                            setIsChatInputFocused(true);
+                            setTimeout(() => scrollChatToBottom(true), 150);
+                          }}
+                          onBlur={() => {
+                            setTimeout(() => setIsChatInputFocused(false), 150);
+                          }}
+                          onChange={(e) => setChatInput(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') handleChatSubmit();
+                          }}
+                          className="flex-1 min-w-0 bg-asphalt border border-bunker rounded-sm px-2.5 sm:px-3 py-2 text-xs sm:text-sm text-chalk focus:outline-none focus:border-acid font-mono"
                         />
-                      </label>
-                      <input
-                        id="chat-input"
-                        type="text"
-                        placeholder="Manda o papo..."
-                        value={chatInput}
-                        onFocus={() => {
-                          setTimeout(() => scrollChatToBottom(true), 200);
-                        }}
-                        onChange={(e) => setChatInput(e.target.value)}
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter') handleChatSubmit();
-                        }}
-                        className="flex-1 bg-asphalt border border-bunker rounded-sm px-3 py-2 text-sm text-chalk focus:outline-none focus:border-acid font-mono"
-                      />
-                      <button
-                        type="button"
-                        onClick={startChatAudioRecord}
-                        title="Gravar Áudio"
-                        className="w-10 h-10 rounded-sm bg-bunker text-sprayCyan hover:border-sprayCyan flex items-center justify-center shrink-0 border border-bunker cursor-pointer active:scale-95 transition-all"
-                      >
-                        <Mic className="w-4 h-4" />
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => handleChatSubmit()}
-                        className="bg-acid text-asphalt font-display tracking-widest px-4 py-2 rounded-sm text-sm shadow-[2px_2px_0px_var(--color-asphalt)] active:translate-y-[2px] active:shadow-none transition-all cursor-pointer font-bold flex items-center gap-1"
-                      >
-                        <span>ENVIAR</span>
-                        <Send className="w-3.5 h-3.5" />
-                      </button>
-                    </div>
-                  )}
-
-                  {/* Estado 2: Gravando Áudio */}
-                  {chatRecordingState === 'recording' && (
-                    <div id="chat-recording-bar" className="flex items-center justify-between gap-2 bg-bunker p-1 rounded-sm border border-urbanOrange">
-                      <div className="flex items-center gap-3 text-urbanOrange animate-pulse px-3">
-                        <Mic className="w-5 h-5" />
-                        <span id="chat-rec-timer" className="font-mono text-sm font-bold tracking-widest">
-                          {String(Math.floor(recSeconds / 60)).padStart(2, '0')}:{String(recSeconds % 60).padStart(2, '0')}
-                        </span>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={pauseChatAudioRecord}
-                        className="bg-urbanOrange text-asphalt font-display px-6 py-2 rounded-sm text-sm tracking-wider shadow-[2px_2px_0px_var(--color-asphalt)] active:translate-y-[2px] active:shadow-none cursor-pointer font-bold flex items-center gap-1.5"
-                      >
-                        <Square className="w-3 h-3 fill-asphalt" />
-                        <span>PAUSAR</span>
-                      </button>
-                    </div>
-                  )}
-
-                  {/* Estado 3: Preview do Áudio */}
-                  {chatRecordingState === 'preview' && (
-                    <div id="chat-preview-bar" className="flex items-center gap-2">
-                      <button
-                        type="button"
-                        onClick={discardChatAudio}
-                        title="Descartar áudio"
-                        className="w-10 h-10 rounded-sm bg-red-500/10 text-red-500 border border-red-500/50 flex items-center justify-center shrink-0 cursor-pointer hover:bg-red-500/20"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
-                      <div className="flex-1 bg-asphalt border border-sprayCyan/50 rounded-sm px-3 py-2 flex items-center justify-between">
-                        <span className="font-mono text-[10px] text-sprayCyan font-bold tracking-widest uppercase">ÁUDIO PRONTO</span>
                         <button
                           type="button"
-                          onClick={playPreviewAudio}
-                          className="w-8 h-8 flex items-center justify-center bg-sprayCyan/20 text-sprayCyan hover:bg-sprayCyan hover:text-asphalt rounded-sm cursor-pointer transition-colors"
+                          onClick={startChatAudioRecord}
+                          title="Gravar Áudio"
+                          className="w-9 h-9 sm:w-10 sm:h-10 rounded-sm bg-bunker text-sprayCyan hover:border-sprayCyan flex items-center justify-center shrink-0 border border-bunker cursor-pointer active:scale-95 transition-all"
                         >
-                          {isPlayingPreview ? (
-                            <Pause className="w-3.5 h-3.5" />
-                          ) : (
-                            <Play className="w-3.5 h-3.5 ml-0.5" />
-                          )}
+                          <Mic className="w-4 h-4" />
+                        </button>
+                        <button
+                          type="button"
+                          onMouseDown={(e) => e.preventDefault()}
+                          onClick={() => handleChatSubmit()}
+                          className="bg-acid text-asphalt font-display tracking-wider sm:tracking-widest px-2.5 sm:px-3.5 py-2 rounded-sm text-xs sm:text-sm shadow-[2px_2px_0px_var(--color-asphalt)] active:translate-y-[2px] active:shadow-none transition-all cursor-pointer font-bold flex items-center gap-1 shrink-0"
+                        >
+                          <span>ENVIAR</span>
+                          <Send className="w-3 h-3 sm:w-3.5 sm:h-3.5 shrink-0" />
                         </button>
                       </div>
-                      <button
-                        type="button"
-                        onClick={sendChatAudio}
-                        className="bg-acid text-asphalt font-display px-4 py-2 rounded-sm text-sm shrink-0 shadow-[2px_2px_0px_var(--color-asphalt)] active:translate-y-[2px] active:shadow-none cursor-pointer font-bold"
-                      >
-                        ENVIAR 🚀
-                      </button>
-                    </div>
-                  )}
+                    )}
+
+                    {/* Estado 2: Gravando Áudio */}
+                    {chatRecordingState === 'recording' && (
+                      <div id="chat-recording-bar" className="flex items-center justify-between gap-2 bg-bunker p-1 rounded-sm border border-urbanOrange w-full">
+                        <div className="flex items-center gap-2.5 text-urbanOrange animate-pulse px-2.5">
+                          <Mic className="w-4 h-4 shrink-0" />
+                          <span id="chat-rec-timer" className="font-mono text-xs sm:text-sm font-bold tracking-widest">
+                            {String(Math.floor(recSeconds / 60)).padStart(2, '0')}:{String(recSeconds % 60).padStart(2, '0')}
+                          </span>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={pauseChatAudioRecord}
+                          className="bg-urbanOrange text-asphalt font-display px-4 sm:px-6 py-1.5 sm:py-2 rounded-sm text-xs sm:text-sm tracking-wider shadow-[2px_2px_0px_var(--color-asphalt)] active:translate-y-[2px] active:shadow-none cursor-pointer font-bold flex items-center gap-1.5 shrink-0"
+                        >
+                          <Square className="w-3 h-3 fill-asphalt" />
+                          <span>PAUSAR</span>
+                        </button>
+                      </div>
+                    )}
+
+                    {/* Estado 3: Preview do Áudio */}
+                    {chatRecordingState === 'preview' && (
+                      <div id="chat-preview-bar" className="flex items-center gap-1.5 sm:gap-2 w-full">
+                        <button
+                          type="button"
+                          onClick={discardChatAudio}
+                          title="Descartar áudio"
+                          className="w-9 h-9 sm:w-10 sm:h-10 rounded-sm bg-red-500/10 text-red-500 border border-red-500/50 flex items-center justify-center shrink-0 cursor-pointer hover:bg-red-500/20"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                        <div className="flex-1 min-w-0 bg-asphalt border border-sprayCyan/50 rounded-sm px-2.5 py-1.5 flex items-center justify-between">
+                          <span className="font-mono text-[10px] text-sprayCyan font-bold tracking-widest uppercase truncate">ÁUDIO PRONTO</span>
+                          <button
+                            type="button"
+                            onClick={playPreviewAudio}
+                            className="w-7 h-7 sm:w-8 sm:h-8 flex items-center justify-center bg-sprayCyan/20 text-sprayCyan hover:bg-sprayCyan hover:text-asphalt rounded-sm cursor-pointer transition-colors shrink-0"
+                          >
+                            {isPlayingPreview ? (
+                              <Pause className="w-3.5 h-3.5" />
+                            ) : (
+                              <Play className="w-3.5 h-3.5 ml-0.5" />
+                            )}
+                          </button>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={sendChatAudio}
+                          className="bg-acid text-asphalt font-display px-3 sm:px-4 py-2 rounded-sm text-xs sm:text-sm shrink-0 shadow-[2px_2px_0px_var(--color-asphalt)] active:translate-y-[2px] active:shadow-none cursor-pointer font-bold"
+                        >
+                          ENVIAR 🚀
+                        </button>
+                      </div>
+                    )}
+                  </div>
                 </div>
               </section>
             )}
           </main>
 
-          {/* DOCK */}
-          <nav className={`fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-[460px] z-40 bg-asphalt/95 backdrop-blur-lg border-t-2 border-bunker px-4 py-2 ${virtualKeyboardHeight > 0 ? 'hidden' : 'flex'} items-center justify-around`}>
+          {/* DOCK (OCULTO QUANDO O TECLADO VIRTUAL ESTIVER ABERTO) */}
+          <nav
+            className={`fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-[460px] z-40 bg-asphalt/95 backdrop-blur-lg border-t-2 border-bunker px-3 py-1.5 ${
+              isKeyboardOpen ? 'hidden' : 'flex'
+            } items-center justify-around`}
+          >
             <button
               id="nav-vault"
               onClick={() => setActiveTab('vault')}
-              className={`flex flex-col items-center py-1 px-6 cursor-pointer transition-colors ${activeTab === 'vault' ? 'text-acid' : 'text-stencil hover:text-chalk'}`}
+              className={`flex flex-col items-center py-1 px-4 sm:px-6 cursor-pointer transition-colors ${activeTab === 'vault' ? 'text-acid' : 'text-stencil hover:text-chalk'}`}
             >
-              <Layers className="w-5 h-5 mb-1" />
-              <span className="font-bebas tracking-widest text-xs">MÍDIAS</span>
+              <Layers className="w-4 h-4 sm:w-5 sm:h-5 mb-0.5" />
+              <span className="font-bebas tracking-widest text-[11px] sm:text-xs">MÍDIAS</span>
             </button>
             <button
               onClick={() => {
@@ -1633,18 +1654,19 @@ export default function App() {
                 setUploadCaption('');
                 setIsUploadModalOpen(true);
               }}
-              className="-mt-8 bg-acid text-asphalt font-display text-lg px-5 py-3 rounded-sm border-2 border-asphalt shadow-[4px_4px_0px_var(--color-urbanOrange)] active:translate-y-1 active:shadow-[1px_1px_0px_var(--color-urbanOrange)] transition-all cursor-pointer font-bold flex items-center gap-1.5"
+              translate="no"
+              className="notranslate -mt-4 sm:-mt-6 bg-acid text-asphalt font-display text-xs sm:text-base px-3.5 py-2 sm:px-5 sm:py-2.5 rounded-sm border-2 border-asphalt shadow-[3px_3px_0px_var(--color-urbanOrange)] active:translate-y-0.5 active:shadow-[1px_1px_0px_var(--color-urbanOrange)] transition-all cursor-pointer font-bold flex items-center gap-1 whitespace-nowrap shrink-0"
             >
-              <Plus className="w-5 h-5" />
+              <Plus className="w-4 h-4 sm:w-5 sm:h-5 shrink-0" />
               <span>ADD MÍDIA</span>
             </button>
             <button
               id="nav-chat"
               onClick={() => setActiveTab('chat')}
-              className={`flex flex-col items-center py-1 px-6 cursor-pointer transition-colors ${activeTab === 'chat' ? 'text-acid' : 'text-stencil hover:text-chalk'}`}
+              className={`flex flex-col items-center py-1 px-4 sm:px-6 cursor-pointer transition-colors ${activeTab === 'chat' ? 'text-acid' : 'text-stencil hover:text-chalk'}`}
             >
-              <MessageSquare className="w-5 h-5 mb-1" />
-              <span className="font-bebas tracking-widest text-xs">RESENHA</span>
+              <MessageSquare className="w-4 h-4 sm:w-5 sm:h-5 mb-0.5" />
+              <span className="font-bebas tracking-widest text-[11px] sm:text-xs">RESENHA</span>
             </button>
           </nav>
 
