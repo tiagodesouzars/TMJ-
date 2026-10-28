@@ -80,10 +80,19 @@ export interface ChatMessage {
 }
 
 const DEFAULT_SQUAD: SquadMember[] = [
-  { id: 't1', name: 'TIAGO', handle: '@tiago', role: 'Drip & Fit', color: '#ccff00', password: null, customAvatar: null },
-  { id: 'j2', name: 'JORGE', handle: '@jorge', role: 'Beats & Áudio', color: '#ff5500', password: null, customAvatar: null },
-  { id: 'm3', name: 'MARCUS', handle: '@marcus', role: 'Film & Skate', color: '#00e5ff', password: null, customAvatar: null }
+  { id: 't1', name: 'TIAGO', handle: '@tiago', role: 'Drip & Fit', color: 'var(--color-acid)', password: null, customAvatar: null },
+  { id: 'j2', name: 'JORGE', handle: '@jorge', role: 'Beats & Áudio', color: 'var(--color-urbanOrange)', password: null, customAvatar: null },
+  { id: 'm3', name: 'MARCUS', handle: '@marcus', role: 'Film & Skate', color: 'var(--color-sprayCyan)', password: null, customAvatar: null }
 ];
+
+export const normalizeSquadColor = (color?: string | null): string => {
+  if (!color) return 'var(--color-acid)';
+  if (color === '#ccff00') return 'var(--color-acid)';
+  if (color === '#ff5500') return 'var(--color-urbanOrange)';
+  if (color === '#00e5ff') return 'var(--color-sprayCyan)';
+  return color;
+};
+
 
 export default function App() {
   const [currentScreen, setCurrentScreen] = useState<'splash' | 'login' | 'app'>('splash');
@@ -136,7 +145,9 @@ export default function App() {
   const audioChunksRef = useRef<Blob[]>([]);
   const recIntervalRef = useRef<number | null>(null);
   const chatListRef = useRef<HTMLDivElement>(null);
+  const chatBottomAnchorRef = useRef<HTMLDivElement>(null);
   const fileInputChatRef = useRef<HTMLInputElement>(null);
+  const [virtualKeyboardHeight, setVirtualKeyboardHeight] = useState(0);
 
   const appId = 'triotmj-3187e';
 
@@ -218,12 +229,50 @@ export default function App() {
     };
   }, []);
 
-  // Auto-scroll chat on new messages
+  // Dynamic visual viewport detection for mobile virtual keyboard
   useEffect(() => {
-    if (chatListRef.current) {
+    if (typeof window === 'undefined') return;
+
+    const handleVisualViewportResize = () => {
+      if (!window.visualViewport) return;
+      const windowHeight = window.innerHeight;
+      const viewportHeight = window.visualViewport.height;
+      const keyboardOffset = Math.max(0, Math.round(windowHeight - viewportHeight));
+
+      // Trigger dynamic offset only when on-screen keyboard is open (offset > 100px)
+      if (keyboardOffset > 100) {
+        setVirtualKeyboardHeight(keyboardOffset);
+      } else {
+        setVirtualKeyboardHeight(0);
+      }
+    };
+
+    window.visualViewport?.addEventListener('resize', handleVisualViewportResize);
+    window.visualViewport?.addEventListener('scroll', handleVisualViewportResize);
+
+    return () => {
+      window.visualViewport?.removeEventListener('resize', handleVisualViewportResize);
+      window.visualViewport?.removeEventListener('scroll', handleVisualViewportResize);
+    };
+  }, []);
+
+  // Enhanced auto-scroll chat ensuring bottom messages have safety space
+  const scrollChatToBottom = (smooth = true) => {
+    if (chatBottomAnchorRef.current) {
+      chatBottomAnchorRef.current.scrollIntoView({ behavior: smooth ? 'smooth' : 'auto', block: 'end' });
+    } else if (chatListRef.current) {
       chatListRef.current.scrollTop = chatListRef.current.scrollHeight;
     }
-  }, [chatMessages, activeTab]);
+  };
+
+  useEffect(() => {
+    if (activeTab === 'chat') {
+      scrollChatToBottom(false);
+      const timer = setTimeout(() => scrollChatToBottom(false), 50);
+      return () => clearTimeout(timer);
+    }
+  }, [chatMessages, activeTab, virtualKeyboardHeight]);
+
 
   // Keep activeMember and selectedLoginUser in sync with freshest squad state
   useEffect(() => {
@@ -379,7 +428,7 @@ export default function App() {
       authorColor: activeMember.color,
       type: pendingUploadData.type,
       url: pendingUploadData.url,
-      caption: uploadCaption.trim() || 'Drop no Vault',
+      caption: uploadCaption.trim() || '',
       timestamp: Date.now(),
       comments: []
     };
@@ -747,10 +796,10 @@ export default function App() {
   };
 
   return (
-    <div className="bg-black min-h-screen flex justify-center items-start selection:bg-acid selection:text-black">
+    <div className="bg-asphalt min-h-screen flex justify-center items-start selection:bg-acid selection:text-asphalt">
       {/* ==================== 1. TELA DE ENTRADA / SPLASH SCREEN ==================== */}
       {currentScreen === 'splash' && (
-        <div id="splash-screen" className="fixed inset-0 z-[100] flex flex-col items-center justify-center bg-black select-none p-4 overflow-hidden">
+        <div id="splash-screen" className="fixed inset-0 z-[100] flex flex-col items-center justify-center bg-asphalt select-none p-4 overflow-hidden">
           {/* BANNER COMO BACKGROUND COM OPACIDADE BAIXA */}
           <div className="absolute inset-0 z-0 pointer-events-none">
             <img
@@ -759,8 +808,8 @@ export default function App() {
               className="w-full h-full object-cover object-center opacity-25 filter grayscale contrast-125 scale-105"
             />
             {/* Vignette escura e gradiente para legibilidade e visual streetwear */}
-            <div className="absolute inset-0 bg-gradient-to-t from-black via-black/60 to-black/80"></div>
-            <div className="absolute inset-0 bg-radial from-transparent via-black/40 to-black"></div>
+            <div className="absolute inset-0 bg-gradient-to-t from-asphalt via-asphalt/60 to-asphalt/80"></div>
+            <div className="absolute inset-0 bg-radial from-transparent via-asphalt/40 to-asphalt"></div>
           </div>
 
           {/* MARCAS DE GRAFITE E PIXAÇÃO (PIXO DE RUA / TAGS / ESCORRIDOS DE MOP) */}
@@ -854,14 +903,14 @@ export default function App() {
               <img
                 src={TMJ_LOGO_URL}
                 alt="TMJ Logo"
-                className="w-full h-full object-contain mix-blend-screen drop-shadow-[0_0_40px_rgba(255,85,0,0.6)] animate-pulse transition-all duration-1000"
+                className="w-full h-full object-contain mix-blend-screen drop-shadow-[0_0_40px_var(--color-urbanOrange)] animate-pulse transition-all duration-1000"
               />
             </div>
 
             {/* STENCIL STREETWEAR */}
             <div className="flex items-center gap-2 mb-3">
               <span className="w-6 h-0.5 bg-urbanOrange"></span>
-              <span className="font-mono text-acid text-xs sm:text-sm tracking-[0.25em] font-bold uppercase drop-shadow-[1px_1px_0px_#000]">
+              <span className="font-mono text-acid text-xs sm:text-sm tracking-[0.25em] font-bold uppercase drop-shadow-[1px_1px_0px_var(--color-asphalt)]">
                 RESENHA OU MORTE
               </span>
               <span className="w-6 h-0.5 bg-acid"></span>
@@ -874,7 +923,7 @@ export default function App() {
             {/* BOTÃO ENTRAR */}
             <button
               onClick={() => setCurrentScreen('login')}
-              className="w-full max-w-[300px] bg-acid hover:bg-[#d9ff1a] text-black font-display text-2xl tracking-widest px-8 py-4 rounded-sm shadow-[6px_6px_0px_#ff5500] active:translate-y-1 active:shadow-[2px_2px_0px_#ff5500] transition-all cursor-pointer flex items-center justify-center gap-3 font-bold"
+              className="w-full max-w-[300px] bg-acid hover:brightness-110 text-asphalt font-display text-2xl tracking-widest px-8 py-4 rounded-sm shadow-[6px_6px_0px_var(--color-urbanOrange)] active:translate-y-1 active:shadow-[2px_2px_0px_var(--color-urbanOrange)] transition-all cursor-pointer flex items-center justify-center gap-3 font-bold"
             >
               <span>ENTRAR</span>
               <ArrowRight className="w-6 h-6 stroke-[3]" />
@@ -885,7 +934,7 @@ export default function App() {
 
       {/* ==================== 2. TELA DE LOGIN DO TRIO ==================== */}
       {currentScreen === 'login' && (
-        <div id="login-screen" className="fixed inset-0 z-[90] bg-black flex flex-col items-center justify-center p-4 select-none overflow-y-auto">
+        <div id="login-screen" className="fixed inset-0 z-[90] bg-asphalt flex flex-col items-center justify-center p-4 select-none overflow-y-auto">
           {/* BANNER COMO BACKGROUND COM OPACIDADE BAIXA */}
           <div className="absolute inset-0 z-0 pointer-events-none">
             <img
@@ -893,8 +942,8 @@ export default function App() {
               alt="Trio TMJ Background"
               className="w-full h-full object-cover object-center opacity-20 filter grayscale contrast-125 scale-105"
             />
-            <div className="absolute inset-0 bg-gradient-to-t from-black via-black/75 to-black/90"></div>
-            <div className="absolute inset-0 bg-radial from-transparent via-black/50 to-black"></div>
+            <div className="absolute inset-0 bg-gradient-to-t from-asphalt via-asphalt/75 to-asphalt/90"></div>
+            <div className="absolute inset-0 bg-radial from-transparent via-asphalt/50 to-asphalt"></div>
           </div>
 
           {/* SINAIS DE GRAFITE E PIXAÇÃO NA TELA DE LOGIN */}
@@ -933,25 +982,26 @@ export default function App() {
               <img
                 src={TMJ_LOGO_URL}
                 alt="TMJ"
-                className="w-full h-full object-contain mix-blend-screen drop-shadow-[0_0_25px_rgba(255,85,0,0.5)]"
+                className="w-full h-full object-contain mix-blend-screen drop-shadow-[0_0_25px_var(--color-urbanOrange)]"
               />
             </div>
 
-            <h2 className="font-display text-4xl sm:text-5xl text-white mb-0.5 tracking-wide drop-shadow-[2px_2px_0px_#000]">
+            <h2 className="font-display text-4xl sm:text-5xl text-chalk mb-0.5 tracking-wide drop-shadow-[2px_2px_0px_var(--color-asphalt)]">
               QUEM É VOCÊ?
             </h2>
-            <p className="font-mono text-xs text-acid mb-6 tracking-widest font-semibold drop-shadow-[1px_1px_0px_#000]">
+            <p className="font-mono text-xs text-acid mb-6 tracking-widest font-semibold drop-shadow-[1px_1px_0px_var(--color-asphalt)]">
               ACESSO RESTRITO AO TRIO
             </p>
 
             <div id="login-users-grid" className="w-full space-y-3">
             {squadMembers.map((m) => {
               const hasPwd = m.password && m.password.trim() !== '';
+              const resolvedColor = normalizeSquadColor(m.color);
               return (
                 <div
                   key={m.id}
                   onClick={() => handleSelectLoginMember(m)}
-                  className="bg-asphalt border-2 border-neutral-800 hover:border-acid p-4 rounded-sm flex items-center justify-between cursor-pointer transition-all shadow-md active:translate-y-0.5"
+                  className="bg-asphalt border-2 border-bunker hover:border-acid p-4 rounded-sm flex items-center justify-between cursor-pointer transition-all shadow-md active:translate-y-0.5"
                 >
                   <div className="flex items-center gap-3">
                     {m.customAvatar ? (
@@ -959,18 +1009,18 @@ export default function App() {
                         src={m.customAvatar}
                         alt={m.name}
                         className="w-12 h-12 rounded-sm object-cover border"
-                        style={{ borderColor: m.color }}
+                        style={{ borderColor: resolvedColor }}
                       />
                     ) : (
                       <div
                         className="w-12 h-12 rounded-sm flex items-center justify-center font-display text-xl bg-concrete"
-                        style={{ color: m.color }}
+                        style={{ color: resolvedColor }}
                       >
                         {m.name[0]}
                       </div>
                     )}
                     <div>
-                      <h4 className="font-display text-xl text-white tracking-wide">{m.name}</h4>
+                      <h4 className="font-display text-xl text-chalk tracking-wide">{m.name}</h4>
                       <p className="font-mono text-[10px] text-stencil uppercase">{m.role || m.handle}</p>
                     </div>
                   </div>
@@ -992,15 +1042,15 @@ export default function App() {
 
           {/* Modal Interno de Senha */}
           {isPasswordPromptOpen && selectedLoginUser && (
-            <div id="password-prompt" className="absolute inset-x-4 bottom-6 bg-bunker border border-neutral-700 p-6 rounded-sm shadow-2xl max-w-[340px] mx-auto z-50">
-              <div className="flex justify-between items-center mb-4 border-b border-neutral-800 pb-2">
-                <h3 id="pwd-title" className="font-display text-2xl text-white tracking-wide">
+            <div id="password-prompt" className="absolute inset-x-4 bottom-6 bg-bunker border border-bunker p-6 rounded-sm shadow-2xl max-w-[340px] mx-auto z-50">
+              <div className="flex justify-between items-center mb-4 border-b border-bunker pb-2">
+                <h3 id="pwd-title" className="font-display text-2xl text-chalk tracking-wide">
                   {passwordTitle}
                 </h3>
                 <button
                   type="button"
                   onClick={() => setIsPasswordPromptOpen(false)}
-                  className="w-8 h-8 rounded-sm bg-asphalt text-stencil cursor-pointer flex items-center justify-center hover:text-white"
+                  className="w-8 h-8 rounded-sm bg-asphalt text-stencil cursor-pointer flex items-center justify-center hover:text-chalk"
                 >
                   <X className="w-4 h-4" />
                 </button>
@@ -1020,7 +1070,7 @@ export default function App() {
                 onKeyDown={(e) => {
                   if (e.key === 'Enter') handleSubmitPassword();
                 }}
-                className="w-full bg-asphalt border-2 border-neutral-700 rounded-sm px-4 py-3 text-white mb-4 focus:border-acid focus:outline-none text-center tracking-[0.5em] font-mono text-lg"
+                className="w-full bg-asphalt border-2 border-bunker rounded-sm px-4 py-3 text-chalk mb-4 focus:border-acid focus:outline-none text-center tracking-[0.5em] font-mono text-lg"
               />
 
               <button
@@ -1028,7 +1078,7 @@ export default function App() {
                 id="pwd-submit-btn"
                 disabled={isSavingPassword}
                 onClick={handleSubmitPassword}
-                className="w-full bg-acid text-black font-display text-lg tracking-widest py-3 rounded-sm border border-black shadow-[4px_4px_0px_#000] active:translate-y-1 active:shadow-none transition-all cursor-pointer font-bold disabled:opacity-50"
+                className="w-full bg-acid text-asphalt font-display text-lg tracking-widest py-3 rounded-sm border border-asphalt shadow-[4px_4px_0px_var(--color-asphalt)] active:translate-y-1 active:shadow-none transition-all cursor-pointer font-bold disabled:opacity-50"
               >
                 {isSavingPassword ? 'SALVANDO...' : 'CONFIRMAR'}
               </button>
@@ -1040,17 +1090,17 @@ export default function App() {
 
       {/* ==================== 3. MOBILE-FIRST APP CONTAINER ==================== */}
       {currentScreen === 'app' && activeMember && (
-        <div id="app-shell" className="w-full max-w-[460px] min-h-screen bg-concrete-texture border-x border-neutral-800/80 flex flex-col relative z-10 shadow-2xl pb-20">
+        <div id="app-shell" className={`w-full max-w-[460px] min-h-screen bg-concrete-texture border-x border-bunker/80 flex flex-col relative z-10 shadow-2xl ${virtualKeyboardHeight > 0 ? 'pb-2' : 'pb-20'}`}>
           
           {/* HEADER BANNER MARQUEE */}
-          <div className="bg-acid text-black overflow-hidden py-1 border-b-2 border-black flex relative z-40">
+          <div className="bg-acid text-asphalt overflow-hidden py-1 border-b-2 border-asphalt flex relative z-40">
             <div className="font-mono text-[10px] sm:text-[11px] font-semibold tracking-[0.22em] animate-ticker whitespace-nowrap uppercase">
-              +++ TMJ  +++ RESENHA OU MORTE +++ DAAAAMN +++ VOCE ME SENTE? +++ TMJ +++ APENAS ME DIGA QUEM VAI MORRER HOJE! +++ CONCEPT? +++
+              +++ TRIO TMJ  +++ RESENHA OU MORTE +++ DAAAAMN +++ VOCE ME SENTE? +++ TMJ +++ APENAS ME DIGA QUEM VAI MORRER HOJE! +++ CONCEPT? +++
             </div>
           </div>
 
           {/* HEADER (SEM BANNER, VISUAL LIMPO E OTIMIZADO PARA O CONTEÚDO) */}
-          <header className="sticky top-0 z-30 bg-asphalt/95 backdrop-blur-md border-b border-neutral-800 px-4 py-2.5">
+          <header className="sticky top-0 z-30 bg-asphalt/95 backdrop-blur-md border-b border-bunker px-4 py-2.5">
             <div className="flex items-center justify-between">
               <img
                 src={TMJ_LOGO_URL}
@@ -1062,7 +1112,7 @@ export default function App() {
                 <button
                   type="button"
                   onClick={openSquadModal}
-                  className="bg-concrete border border-neutral-700 hover:border-acid rounded-sm px-3 py-1.5 flex items-center gap-1.5 text-[10px] font-mono text-chalk shadow-[2px_2px_0px_#000] active:translate-y-[2px] active:shadow-none transition-all cursor-pointer"
+                  className="bg-concrete border border-bunker hover:border-acid rounded-sm px-3 py-1.5 flex items-center gap-1.5 text-[10px] font-mono text-chalk shadow-[2px_2px_0px_var(--color-asphalt)] active:translate-y-[2px] active:shadow-none transition-all cursor-pointer"
                 >
                   <span>SQUAD ID</span>
                   <BadgeCheck className="w-3.5 h-3.5 text-acid" />
@@ -1074,7 +1124,7 @@ export default function App() {
                     setCurrentScreen('login');
                   }}
                   title="Sair da conta"
-                  className="bg-bunker border border-neutral-700 rounded-sm w-8 h-7 flex items-center justify-center text-stencil hover:text-urbanOrange transition-colors cursor-pointer"
+                  className="bg-bunker border border-bunker rounded-sm w-8 h-7 flex items-center justify-center text-stencil hover:text-urbanOrange transition-colors cursor-pointer"
                 >
                   <LogOut className="w-3.5 h-3.5" />
                 </button>
@@ -1083,28 +1133,28 @@ export default function App() {
           </header>
 
           {/* MAIN CONTENT AREA */}
-          <main className="flex-1 flex flex-col">
+          <main className="flex-1 flex flex-col min-h-0">
             {/* ==================== TAB 1: MIDIA DOS GURI (VAULT) ==================== */}
             {activeTab === 'vault' && (
               <section id="view-vault" className="flex-1 flex flex-col px-3 pt-4 pb-6">
-                <div className="flex items-center justify-between mb-4 px-1 border-b border-neutral-800 border-dashed pb-2">
+                <div className="flex items-center justify-between mb-4 px-1 border-b border-bunker border-dashed pb-2">
                   <div className="flex items-center gap-2">
-                    <h2 className="font-display text-2xl text-white uppercase tracking-wide">midia dos guri</h2>
+                    <h2 className="font-display text-2xl text-chalk uppercase tracking-wide">midia dos guri</h2>
                     <span id="vault-count-badge" className="font-mono text-[10px] text-sprayCyan border border-sprayCyan/30 bg-sprayCyan/10 px-2 py-0.5 rounded-sm font-bold">
                       {vaultItems.length} DROPS
                     </span>
                   </div>
 
                   {/* TOGGLE VISUALIZAÇÃO: FEED VS GRADE */}
-                  <div className="flex items-center gap-1 bg-bunker p-0.5 rounded-sm border border-neutral-800">
+                  <div className="flex items-center gap-1 bg-bunker p-0.5 rounded-sm border border-bunker">
                     <button
                       type="button"
                       onClick={() => setVaultViewMode('feed')}
                       title="Visualização em Feed"
                       className={`px-2 py-1 text-[10px] font-mono rounded-xs flex items-center gap-1 transition-colors cursor-pointer ${
                         vaultViewMode === 'feed'
-                          ? 'bg-acid text-black font-bold shadow-xs'
-                          : 'text-stencil hover:text-white'
+                          ? 'bg-acid text-asphalt font-bold shadow-xs'
+                          : 'text-stencil hover:text-chalk'
                       }`}
                     >
                       <List className="w-3.5 h-3.5" />
@@ -1116,8 +1166,8 @@ export default function App() {
                       title="Visualização em Grade"
                       className={`px-2 py-1 text-[10px] font-mono rounded-xs flex items-center gap-1 transition-colors cursor-pointer ${
                         vaultViewMode === 'grid'
-                          ? 'bg-acid text-black font-bold shadow-xs'
-                          : 'text-stencil hover:text-white'
+                          ? 'bg-acid text-asphalt font-bold shadow-xs'
+                          : 'text-stencil hover:text-chalk'
                       }`}
                     >
                       <LayoutGrid className="w-3.5 h-3.5" />
@@ -1127,34 +1177,34 @@ export default function App() {
                 </div>
 
                 {vaultItems.length === 0 ? (
-                  <div className="text-center py-16 bg-concrete border-2 border-dashed border-neutral-800 rounded-sm">
+                  <div className="text-center py-16 bg-concrete border-2 border-dashed border-bunker rounded-sm">
                     <img
                       src={TMJ_LOGO_URL}
                       alt="TMJ"
                       className="w-20 h-20 object-contain mix-blend-screen mx-auto mb-2 opacity-60"
                     />
                     <p className="font-mono text-xs text-stencil uppercase tracking-widest">Nenhuma mídia no Vault ainda.</p>
-                    <p className="font-mono text-[10px] text-neutral-600 mt-1">Toque em + ADD MÍDIA para soltar o primeiro drop!</p>
+                    <p className="font-mono text-[10px] text-stencil/70 mt-1">Toque em + ADD MÍDIA para soltar o primeiro drop!</p>
                   </div>
                 ) : vaultViewMode === 'grid' ? (
                   /* ==================== MODO GRADE ==================== */
                   <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
                     {vaultItems.map((item) => {
                       const docId = item.docId || item.id;
-                      const isMine = item.authorId === activeMember.id;
+                      const resolvedAuthorColor = normalizeSquadColor(item.authorColor);
 
                       return (
                         <div
                           key={docId}
-                          className="bg-concrete border border-neutral-800 rounded-sm overflow-hidden aspect-square relative group cursor-pointer shadow-md"
+                          className="bg-concrete border border-bunker rounded-sm overflow-hidden aspect-square relative group cursor-pointer shadow-md"
                           onClick={() => setFullMediaModalItem(item)}
                         >
                           {item.type === 'video' ? (
                             <div className="w-full h-full bg-asphalt flex items-center justify-center relative">
                               <video src={item.url} className="w-full h-full object-cover" muted playsInline />
-                              <div className="absolute inset-0 bg-black/40 flex items-center justify-center group-hover:bg-black/20 transition-colors">
-                                <div className="w-10 h-10 rounded-full bg-acid/90 text-black flex items-center justify-center">
-                                  <Play className="w-5 h-5 fill-black ml-0.5" />
+                              <div className="absolute inset-0 bg-asphalt/50 flex items-center justify-center group-hover:bg-asphalt/30 transition-colors">
+                                <div className="w-10 h-10 rounded-full bg-acid/90 text-asphalt flex items-center justify-center">
+                                  <Play className="w-5 h-5 fill-asphalt ml-0.5" />
                                 </div>
                               </div>
                             </div>
@@ -1167,9 +1217,9 @@ export default function App() {
                           )}
 
                           {/* Gradient and info overlay */}
-                          <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/90 via-black/40 to-transparent p-2 flex items-end justify-between">
+                          <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-asphalt/95 via-asphalt/50 to-transparent p-2 flex items-end justify-between">
                             <div className="min-w-0 pr-1">
-                              <span className="font-mono text-[10px] uppercase font-bold truncate block" style={{ color: item.authorColor }}>
+                              <span className="font-mono text-[10px] uppercase font-bold truncate block" style={{ color: resolvedAuthorColor }}>
                                 {item.authorName}
                               </span>
                               {item.caption && (
@@ -1187,7 +1237,7 @@ export default function App() {
                                 downloadMediaFile(item.url, `TMJ_${item.id}.${item.type === 'video' ? 'mp4' : 'jpg'}`);
                               }}
                               title="Baixar em alta qualidade"
-                              className="w-7 h-7 bg-black/80 hover:bg-acid hover:text-black text-white rounded-xs border border-neutral-700 flex items-center justify-center shrink-0 transition-colors cursor-pointer"
+                              className="w-7 h-7 bg-asphalt/85 hover:bg-acid hover:text-asphalt text-chalk rounded-xs border border-bunker flex items-center justify-center shrink-0 transition-colors cursor-pointer"
                             >
                               <Download className="w-3.5 h-3.5" />
                             </button>
@@ -1202,12 +1252,13 @@ export default function App() {
                     {vaultItems.map((item) => {
                       const docId = item.docId || item.id;
                       const isMine = item.authorId === activeMember.id;
+                      const resolvedAuthorColor = normalizeSquadColor(item.authorColor);
 
                       return (
-                        <div key={docId} className="bg-concrete border-2 border-neutral-800 rounded-sm overflow-hidden relative shadow-lg">
-                          <div className="p-3 bg-asphalt border-b border-neutral-800 flex items-center justify-between">
+                        <div key={docId} className="bg-concrete border-2 border-bunker rounded-sm overflow-hidden relative shadow-lg">
+                          <div className="p-3 bg-asphalt border-b border-bunker flex items-center justify-between">
                             <div className="flex items-center gap-2">
-                              <span className="font-display tracking-wide uppercase text-sm" style={{ color: item.authorColor }}>
+                              <span className="font-display tracking-wide uppercase text-sm" style={{ color: resolvedAuthorColor }}>
                                 {item.authorName}
                               </span>
                               <span className="font-mono text-[9px] text-stencil">
@@ -1220,14 +1271,14 @@ export default function App() {
                               type="button"
                               onClick={() => downloadMediaFile(item.url, `TMJ_${item.id}.${item.type === 'video' ? 'mp4' : 'jpg'}`)}
                               title="Baixar arquivo original sem perder qualidade"
-                              className="flex items-center gap-1 bg-bunker hover:bg-neutral-800 border border-neutral-700 hover:border-acid text-chalk hover:text-acid px-2 py-1 rounded-xs font-mono text-[10px] transition-colors cursor-pointer"
+                              className="flex items-center gap-1 bg-bunker hover:bg-concrete border border-bunker hover:border-acid text-chalk hover:text-acid px-2 py-1 rounded-xs font-mono text-[10px] transition-colors cursor-pointer"
                             >
                               <Download className="w-3.5 h-3.5" />
                               <span>BAIXAR</span>
                             </button>
                           </div>
 
-                          <div className="relative group bg-black">
+                          <div className="relative group bg-asphalt">
                             {item.type === 'video' ? (
                               <video src={item.url} className="w-full max-h-96 object-cover" controls playsInline></video>
                             ) : (
@@ -1238,14 +1289,14 @@ export default function App() {
                                 onClick={() => setFullMediaModalItem(item)}
                               />
                             )}
-                            <div className="absolute top-2 right-2 bg-black/80 px-1.5 py-0.5 rounded-sm border border-neutral-800 pointer-events-none">
+                            <div className="absolute top-2 right-2 bg-asphalt/85 px-1.5 py-0.5 rounded-sm border border-bunker pointer-events-none">
                               <img src={TMJ_LOGO_URL} alt="TMJ" className="h-5 w-auto object-contain mix-blend-screen" />
                             </div>
                             {isMine && (
                               <button
                                 onClick={() => deleteVaultItem(docId)}
                                 title="Excluir da mídia"
-                                className="absolute top-2 left-2 w-8 h-8 bg-black/90 text-red-500 rounded-full border border-red-500/50 flex items-center justify-center hover:bg-red-500 hover:text-black transition cursor-pointer z-20"
+                                className="absolute top-2 left-2 w-8 h-8 bg-asphalt/90 text-red-500 rounded-full border border-red-500/50 flex items-center justify-center hover:bg-red-500 hover:text-asphalt transition cursor-pointer z-20"
                               >
                                 <Trash2 className="w-3.5 h-3.5" />
                               </button>
@@ -1256,12 +1307,12 @@ export default function App() {
                             <p className="font-sans text-sm text-chalk">{item.caption || ''}</p>
 
                             {/* Thread de Comentários */}
-                            <div className="bg-asphalt border border-neutral-800 rounded-sm p-2 space-y-1 max-h-36 overflow-y-auto">
+                            <div className="bg-asphalt border border-bunker rounded-sm p-2 space-y-1 max-h-36 overflow-y-auto">
                               {item.comments && item.comments.length > 0 ? (
                                 item.comments.map((c, i) => (
-                                  <div key={i} className="text-xs font-mono py-1 border-b border-neutral-800 last:border-0 flex items-center justify-between">
+                                  <div key={i} className="text-xs font-mono py-1 border-b border-bunker last:border-0 flex items-center justify-between">
                                     <div>
-                                      <span className="font-bold mr-2 uppercase" style={{ color: c.color }}>{c.author}:</span>
+                                      <span className="font-bold mr-2 uppercase" style={{ color: normalizeSquadColor(c.color) }}>{c.author}:</span>
                                       <span className="text-chalk">{c.text}</span>
                                     </div>
                                     <span className="text-[9px] text-stencil">{c.time}</span>
@@ -1275,7 +1326,7 @@ export default function App() {
                             <input
                               type="text"
                               placeholder="Responder no drop..."
-                              className="w-full bg-asphalt border border-neutral-800 rounded-sm px-3 py-2 text-xs text-white focus:border-acid focus:outline-none font-mono"
+                              className="w-full bg-asphalt border border-bunker rounded-sm px-3 py-2 text-xs text-chalk focus:border-acid focus:outline-none font-mono"
                               onKeyDown={(e) => {
                                 if (e.key === 'Enter') {
                                   addVaultComment(docId, (e.target as HTMLInputElement).value);
@@ -1294,12 +1345,25 @@ export default function App() {
 
             {/* ==================== TAB 2: RESENHA (CHAT) ==================== */}
             {activeTab === 'chat' && (
-              <section id="view-chat" className="flex-1 flex flex-col h-[calc(100vh-190px)] px-3 pt-3">
-                <div className="mb-2 px-1 border-b border-neutral-800 border-dashed pb-2">
-                  <h2 className="font-display text-xl text-white uppercase tracking-wide">resenha ou morte</h2>
+              <section 
+                id="view-chat" 
+                style={{
+                  paddingBottom: virtualKeyboardHeight > 0 
+                    ? `${virtualKeyboardHeight + 12}px` 
+                    : 'calc(1.5rem + env(safe-area-inset-bottom, 0px))',
+                  transition: 'padding-bottom 0.15s ease-out'
+                }}
+                className="flex-1 flex flex-col min-h-0 justify-between px-3 pt-3 overflow-hidden"
+              >
+                <div className="mb-2 px-1 border-b border-bunker border-dashed pb-2 shrink-0">
+                  <h2 className="font-display text-xl text-chalk uppercase tracking-wide">resenha ou morte</h2>
                 </div>
 
-                <div ref={chatListRef} id="chat-messages-list" className="flex-1 overflow-y-auto space-y-4 pr-1 py-2">
+                <div 
+                  ref={chatListRef} 
+                  id="chat-messages-list" 
+                  className="flex-1 min-h-0 overflow-y-auto space-y-4 pr-1 py-2 pb-6 overscroll-contain"
+                >
                   {chatMessages.length === 0 ? (
                     <div className="text-center py-10">
                       <p className="font-mono text-xs text-stencil uppercase tracking-widest">A resenha começou. Manda o papo!</p>
@@ -1310,9 +1374,9 @@ export default function App() {
                       const isAudioPlaying = playingAudioId === m.id;
                       const durStr = `00:${String(m.duration || 5).padStart(2, '0')}`;
                       
-                      // Look up author in squad for avatar
                       const author = squadMembers.find((s) => s.id === m.authorId);
                       const avatarUrl = m.authorAvatar || author?.customAvatar;
+                      const resolvedAuthorColor = normalizeSquadColor(m.authorColor);
 
                       return (
                         <div key={m.id} className={`flex items-start gap-2.5 ${isMine ? 'flex-row-reverse self-end' : 'self-start'} max-w-[92%]`}>
@@ -1323,12 +1387,12 @@ export default function App() {
                                 src={avatarUrl}
                                 alt={m.authorName}
                                 className="w-8 h-8 rounded-sm object-cover border shadow-sm"
-                                style={{ borderColor: m.authorColor }}
+                                style={{ borderColor: resolvedAuthorColor }}
                               />
                             ) : (
                               <div
                                 className="w-8 h-8 rounded-sm bg-concrete border flex items-center justify-center font-display text-sm font-bold shadow-sm"
-                                style={{ borderColor: m.authorColor, color: m.authorColor }}
+                                style={{ borderColor: resolvedAuthorColor, color: resolvedAuthorColor }}
                               >
                                 {m.authorName[0]}
                               </div>
@@ -1337,7 +1401,7 @@ export default function App() {
 
                           <div className={`flex flex-col ${isMine ? 'items-end' : 'items-start'} space-y-1 min-w-0`}>
                             <div className="flex items-center gap-2">
-                              <span className="font-mono text-[10px] uppercase font-bold" style={{ color: m.authorColor }}>
+                              <span className="font-mono text-[10px] uppercase font-bold" style={{ color: resolvedAuthorColor }}>
                                 {m.authorName}
                               </span>
                               <span className="font-mono text-[9px] text-stencil">
@@ -1350,14 +1414,14 @@ export default function App() {
                                   type="button"
                                   onClick={() => deleteChatMessage(m.docId || m.id)}
                                   title="Deletar mensagem"
-                                  className="text-neutral-500 hover:text-red-400 p-0.5 transition-colors cursor-pointer"
+                                  className="text-stencil hover:text-urbanOrange p-0.5 transition-colors cursor-pointer"
                                 >
                                   <Trash2 className="w-3 h-3" />
                                 </button>
                               )}
                             </div>
 
-                            <div className="bg-concrete border border-neutral-800 rounded-sm p-3 shadow-md relative group">
+                            <div className="bg-concrete border border-bunker rounded-sm p-3 shadow-md relative group">
                               {m.text && <p className="text-sm font-sans text-chalk leading-relaxed">{m.text}</p>}
 
                               {m.mediaUrl && (
@@ -1381,7 +1445,7 @@ export default function App() {
                                     type="button"
                                     onClick={() => downloadMediaFile(m.mediaUrl || '', `CHAT_${m.id}.jpg`)}
                                     title="Baixar foto"
-                                    className="absolute bottom-2 right-2 bg-black/80 hover:bg-acid hover:text-black text-white p-1.5 rounded-xs border border-neutral-700 transition-colors cursor-pointer"
+                                    className="absolute bottom-2 right-2 bg-asphalt/85 hover:bg-acid hover:text-asphalt text-chalk p-1.5 rounded-xs border border-bunker transition-colors cursor-pointer"
                                   >
                                     <Download className="w-3.5 h-3.5" />
                                   </button>
@@ -1394,7 +1458,7 @@ export default function App() {
                                   <button
                                     id={`btn_play_${m.id}`}
                                     onClick={() => togglePlayChatAudio(m.id, m.duration)}
-                                    className="w-9 h-9 rounded-sm bg-sprayCyan/20 text-sprayCyan hover:bg-sprayCyan hover:text-black transition-colors flex items-center justify-center shrink-0 cursor-pointer"
+                                    className="w-9 h-9 rounded-sm bg-sprayCyan/20 text-sprayCyan hover:bg-sprayCyan hover:text-asphalt transition-colors flex items-center justify-center shrink-0 cursor-pointer"
                                   >
                                     {isAudioPlaying ? (
                                       <Pause className="w-4 h-4" />
@@ -1403,7 +1467,7 @@ export default function App() {
                                     )}
                                   </button>
                                   <div className="flex-1 space-y-1.5 min-w-0">
-                                    <div className="w-full bg-neutral-800 h-1.5 rounded-full overflow-hidden">
+                                    <div className="w-full bg-bunker h-1.5 rounded-full overflow-hidden">
                                       <div
                                         id={`prog_${m.id}`}
                                         className="bg-acid h-full transition-all duration-150"
@@ -1425,16 +1489,18 @@ export default function App() {
                       );
                     })
                   )}
+                  {/* Anchor e espaço de segurança garantido para teclado aberto */}
+                  <div ref={chatBottomAnchorRef} className="h-4 shrink-0" />
                 </div>
 
                 {/* Gírias Rápidas */}
-                <div className="py-2 flex items-center gap-2 w-full overflow-x-auto whitespace-nowrap snap-x no-scrollbar border-t border-neutral-800 px-1 mt-2 relative z-20">
+                <div className="py-2 flex items-center gap-2 w-full overflow-x-auto whitespace-nowrap snap-x no-scrollbar border-t border-bunker px-1 mt-1 shrink-0 relative z-20">
                   {['hoje é aonde?', 'resenha', 'to off', 'concept?'].map((stk) => (
                     <button
                       key={stk}
                       type="button"
                       onClick={() => handleChatSubmit(stk)}
-                      className="snap-start shrink-0 bg-concrete border border-neutral-700 text-chalk font-mono text-[10px] px-4 py-2 rounded-sm active:scale-95 transition hover:bg-neutral-800 cursor-pointer"
+                      className="snap-start shrink-0 bg-concrete border border-bunker text-chalk font-mono text-[10px] px-4 py-2 rounded-sm active:scale-95 transition hover:bg-bunker cursor-pointer"
                     >
                       {stk}
                     </button>
@@ -1442,13 +1508,13 @@ export default function App() {
                 </div>
 
                 {/* Chat Input System */}
-                <div className="bg-concrete border-2 border-neutral-800 rounded-sm p-2 mb-2">
+                <div className="bg-concrete border-2 border-bunker rounded-sm p-2 mb-2 shrink-0">
                   {/* Estado 1: Padrão */}
                   {chatRecordingState === 'default' && (
                     <div id="chat-default-bar" className="flex items-center gap-2">
                       <label 
                         title="Enviar Foto, Vídeo ou Áudio" 
-                        className="w-10 h-10 rounded-sm bg-bunker hover:bg-neutral-700 text-acid flex items-center justify-center cursor-pointer shrink-0 border border-neutral-700"
+                        className="w-10 h-10 rounded-sm bg-bunker hover:bg-concrete text-acid flex items-center justify-center cursor-pointer shrink-0 border border-bunker"
                       >
                         <Camera className="w-4 h-4" />
                         <input 
@@ -1464,24 +1530,27 @@ export default function App() {
                         type="text"
                         placeholder="Manda o papo..."
                         value={chatInput}
+                        onFocus={() => {
+                          setTimeout(() => scrollChatToBottom(true), 200);
+                        }}
                         onChange={(e) => setChatInput(e.target.value)}
                         onKeyDown={(e) => {
                           if (e.key === 'Enter') handleChatSubmit();
                         }}
-                        className="flex-1 bg-asphalt border border-neutral-800 rounded-sm px-3 py-2 text-sm text-white focus:outline-none focus:border-acid font-mono"
+                        className="flex-1 bg-asphalt border border-bunker rounded-sm px-3 py-2 text-sm text-chalk focus:outline-none focus:border-acid font-mono"
                       />
                       <button
                         type="button"
                         onClick={startChatAudioRecord}
                         title="Gravar Áudio"
-                        className="w-10 h-10 rounded-sm bg-bunker text-sprayCyan hover:border-sprayCyan flex items-center justify-center shrink-0 border border-neutral-700 cursor-pointer active:scale-95 transition-all"
+                        className="w-10 h-10 rounded-sm bg-bunker text-sprayCyan hover:border-sprayCyan flex items-center justify-center shrink-0 border border-bunker cursor-pointer active:scale-95 transition-all"
                       >
                         <Mic className="w-4 h-4" />
                       </button>
                       <button
                         type="button"
                         onClick={() => handleChatSubmit()}
-                        className="bg-acid text-black font-display tracking-widest px-4 py-2 rounded-sm text-sm shadow-[2px_2px_0px_#000] active:translate-y-[2px] active:shadow-none transition-all cursor-pointer font-bold flex items-center gap-1"
+                        className="bg-acid text-asphalt font-display tracking-widest px-4 py-2 rounded-sm text-sm shadow-[2px_2px_0px_var(--color-asphalt)] active:translate-y-[2px] active:shadow-none transition-all cursor-pointer font-bold flex items-center gap-1"
                       >
                         <span>ENVIAR</span>
                         <Send className="w-3.5 h-3.5" />
@@ -1501,9 +1570,9 @@ export default function App() {
                       <button
                         type="button"
                         onClick={pauseChatAudioRecord}
-                        className="bg-urbanOrange text-black font-display px-6 py-2 rounded-sm text-sm tracking-wider shadow-[2px_2px_0px_#000] active:translate-y-[2px] active:shadow-none cursor-pointer font-bold flex items-center gap-1.5"
+                        className="bg-urbanOrange text-asphalt font-display px-6 py-2 rounded-sm text-sm tracking-wider shadow-[2px_2px_0px_var(--color-asphalt)] active:translate-y-[2px] active:shadow-none cursor-pointer font-bold flex items-center gap-1.5"
                       >
-                        <Square className="w-3 h-3 fill-black" />
+                        <Square className="w-3 h-3 fill-asphalt" />
                         <span>PAUSAR</span>
                       </button>
                     </div>
@@ -1525,7 +1594,7 @@ export default function App() {
                         <button
                           type="button"
                           onClick={playPreviewAudio}
-                          className="w-8 h-8 flex items-center justify-center bg-sprayCyan/20 text-sprayCyan hover:bg-sprayCyan hover:text-black rounded-sm cursor-pointer transition-colors"
+                          className="w-8 h-8 flex items-center justify-center bg-sprayCyan/20 text-sprayCyan hover:bg-sprayCyan hover:text-asphalt rounded-sm cursor-pointer transition-colors"
                         >
                           {isPlayingPreview ? (
                             <Pause className="w-3.5 h-3.5" />
@@ -1537,7 +1606,7 @@ export default function App() {
                       <button
                         type="button"
                         onClick={sendChatAudio}
-                        className="bg-acid text-black font-display px-4 py-2 rounded-sm text-sm shrink-0 shadow-[2px_2px_0px_#000] active:translate-y-[2px] active:shadow-none cursor-pointer font-bold"
+                        className="bg-acid text-asphalt font-display px-4 py-2 rounded-sm text-sm shrink-0 shadow-[2px_2px_0px_var(--color-asphalt)] active:translate-y-[2px] active:shadow-none cursor-pointer font-bold"
                       >
                         ENVIAR 🚀
                       </button>
@@ -1549,11 +1618,11 @@ export default function App() {
           </main>
 
           {/* DOCK */}
-          <nav className="fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-[460px] z-40 bg-asphalt/95 backdrop-blur-lg border-t-2 border-neutral-800 px-4 py-2 flex items-center justify-around">
+          <nav className={`fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-[460px] z-40 bg-asphalt/95 backdrop-blur-lg border-t-2 border-bunker px-4 py-2 ${virtualKeyboardHeight > 0 ? 'hidden' : 'flex'} items-center justify-around`}>
             <button
               id="nav-vault"
               onClick={() => setActiveTab('vault')}
-              className={`flex flex-col items-center py-1 px-6 cursor-pointer transition-colors ${activeTab === 'vault' ? 'text-acid' : 'text-stencil hover:text-white'}`}
+              className={`flex flex-col items-center py-1 px-6 cursor-pointer transition-colors ${activeTab === 'vault' ? 'text-acid' : 'text-stencil hover:text-chalk'}`}
             >
               <Layers className="w-5 h-5 mb-1" />
               <span className="font-bebas tracking-widest text-xs">MÍDIAS</span>
@@ -1564,7 +1633,7 @@ export default function App() {
                 setUploadCaption('');
                 setIsUploadModalOpen(true);
               }}
-              className="-mt-8 bg-acid text-black font-display text-lg px-5 py-3 rounded-sm border-2 border-black shadow-[4px_4px_0px_#ff5500] active:translate-y-1 active:shadow-[1px_1px_0px_#ff5500] transition-all cursor-pointer font-bold flex items-center gap-1.5"
+              className="-mt-8 bg-acid text-asphalt font-display text-lg px-5 py-3 rounded-sm border-2 border-asphalt shadow-[4px_4px_0px_var(--color-urbanOrange)] active:translate-y-1 active:shadow-[1px_1px_0px_var(--color-urbanOrange)] transition-all cursor-pointer font-bold flex items-center gap-1.5"
             >
               <Plus className="w-5 h-5" />
               <span>ADD MÍDIA</span>
@@ -1572,7 +1641,7 @@ export default function App() {
             <button
               id="nav-chat"
               onClick={() => setActiveTab('chat')}
-              className={`flex flex-col items-center py-1 px-6 cursor-pointer transition-colors ${activeTab === 'chat' ? 'text-acid' : 'text-stencil hover:text-white'}`}
+              className={`flex flex-col items-center py-1 px-6 cursor-pointer transition-colors ${activeTab === 'chat' ? 'text-acid' : 'text-stencil hover:text-chalk'}`}
             >
               <MessageSquare className="w-5 h-5 mb-1" />
               <span className="font-bebas tracking-widest text-xs">RESENHA</span>
@@ -1581,22 +1650,22 @@ export default function App() {
 
           {/* MODAL: ADD MÍDIA PRO VAULT */}
           {isUploadModalOpen && (
-            <div id="modal-upload" className="fixed inset-0 z-50 bg-black/90 backdrop-blur-md flex items-center justify-center p-4">
-              <div className="w-full max-w-[400px] bg-concrete border-2 border-neutral-700 rounded-sm p-5 shadow-2xl relative">
+            <div id="modal-upload" className="fixed inset-0 z-50 bg-asphalt/90 backdrop-blur-md flex items-center justify-center p-4">
+              <div className="w-full max-w-[400px] bg-concrete border-2 border-bunker rounded-sm p-5 shadow-2xl relative">
                 <div className="absolute -top-3 -right-3 w-12 h-6 bg-acid/80 rotate-12 z-10"></div>
 
-                <div className="flex justify-between items-center mb-6 border-b border-neutral-800 pb-2 relative z-20">
-                  <h3 className="font-display text-2xl text-white tracking-wide">NOVA MÍDIA</h3>
+                <div className="flex justify-between items-center mb-6 border-b border-bunker pb-2 relative z-20">
+                  <h3 className="font-display text-2xl text-chalk tracking-wide">NOVA MÍDIA</h3>
                   <button
                     type="button"
                     onClick={() => setIsUploadModalOpen(false)}
-                    className="text-stencil hover:text-white cursor-pointer"
+                    className="text-stencil hover:text-chalk cursor-pointer"
                   >
                     <X className="w-6 h-6" />
                   </button>
                 </div>
 
-                <label className="block w-full border-2 border-dashed border-neutral-700 rounded-sm p-4 text-center cursor-pointer bg-asphalt mb-4 hover:border-acid transition-colors">
+                <label className="block w-full border-2 border-dashed border-bunker rounded-sm p-4 text-center cursor-pointer bg-asphalt mb-4 hover:border-acid transition-colors">
                   <input
                     type="file"
                     id="file-input-media"
@@ -1607,11 +1676,11 @@ export default function App() {
                   {!pendingUploadData ? (
                     <div id="upload-preview-placeholder" className="py-6">
                       <Upload className="w-8 h-8 text-acid mx-auto mb-2" />
-                      <p className="font-mono text-sm text-white font-bold tracking-widest uppercase">Toque para adicionar</p>
+                      <p className="font-mono text-sm text-chalk font-bold tracking-widest uppercase">Toque para adicionar</p>
                       <p className="font-mono text-[10px] text-stencil mt-1">FOTO OU VÍDEO (ALTA DEFINIÇÃO / GIF)</p>
                     </div>
                   ) : (
-                    <div id="upload-preview-box" className="relative rounded-sm overflow-hidden max-h-56 flex items-center justify-center bg-black border border-neutral-800">
+                    <div id="upload-preview-box" className="relative rounded-sm overflow-hidden max-h-56 flex items-center justify-center bg-asphalt border border-bunker">
                       {pendingUploadData.type === 'video' ? (
                         <video src={pendingUploadData.url} className="w-full h-48 object-cover" controls></video>
                       ) : (
@@ -1628,13 +1697,13 @@ export default function App() {
                   placeholder="Escreva a legenda..."
                   value={uploadCaption}
                   onChange={(e) => setUploadCaption(e.target.value)}
-                  className="w-full bg-asphalt border-2 border-neutral-800 rounded-sm px-3 py-3 text-sm text-white mb-6 focus:border-acid focus:outline-none font-sans"
+                  className="w-full bg-asphalt border-2 border-bunker rounded-sm px-3 py-3 text-sm text-chalk mb-6 focus:border-acid focus:outline-none font-sans"
                 />
 
                 <button
                   type="button"
                   onClick={submitVaultDrop}
-                  className="w-full bg-acid text-black font-display text-xl tracking-widest py-3 rounded-sm border-2 border-black shadow-[4px_4px_0px_#000] active:translate-y-1 active:shadow-[1px_1px_0px_#000] transition-all cursor-pointer font-bold"
+                  className="w-full bg-acid text-asphalt font-display text-xl tracking-widest py-3 rounded-sm border-2 border-asphalt shadow-[4px_4px_0px_var(--color-asphalt)] active:translate-y-1 active:shadow-[1px_1px_0px_var(--color-asphalt)] transition-all cursor-pointer font-bold"
                 >
                   PUBLICAR NA MÍDIA
                 </button>
@@ -1644,16 +1713,16 @@ export default function App() {
 
           {/* MODAL: SQUAD ID & PERFIL (Upload de Imagem ou GIF) */}
           {isSquadModalOpen && (
-            <div id="modal-squad" className="fixed inset-0 z-50 bg-black/90 backdrop-blur-md flex items-center justify-center p-4">
-              <div className="w-full max-w-[420px] bg-concrete border-2 border-neutral-700 rounded-sm p-5 shadow-2xl relative">
+            <div id="modal-squad" className="fixed inset-0 z-50 bg-asphalt/90 backdrop-blur-md flex items-center justify-center p-4">
+              <div className="w-full max-w-[420px] bg-concrete border-2 border-bunker rounded-sm p-5 shadow-2xl relative">
                 <div className="absolute -top-3 -left-3 w-12 h-6 bg-urbanOrange/80 -rotate-12 z-10"></div>
 
-                <div className="flex items-center justify-between pb-2 mb-5 border-b border-neutral-800 relative z-20">
-                  <h3 className="font-display text-2xl text-white tracking-wide">SQUAD ID</h3>
+                <div className="flex items-center justify-between pb-2 mb-5 border-b border-bunker relative z-20">
+                  <h3 className="font-display text-2xl text-chalk tracking-wide">SQUAD ID</h3>
                   <button
                     type="button"
                     onClick={() => setIsSquadModalOpen(false)}
-                    className="text-stencil hover:text-white cursor-pointer"
+                    className="text-stencil hover:text-chalk cursor-pointer"
                   >
                     <X className="w-6 h-6" />
                   </button>
@@ -1662,13 +1731,14 @@ export default function App() {
                 <div id="squad-edit-form" className="space-y-4 mb-6 max-h-[65vh] overflow-y-auto pr-1">
                   {squadMembers.map((m) => {
                     const isCurrent = m.id === activeMember.id;
+                    const resolvedColor = normalizeSquadColor(m.color);
                     return (
                       <div
                         key={m.id}
-                        className={`bg-asphalt border ${isCurrent ? 'border-acid' : 'border-neutral-800'} p-3.5 rounded-sm space-y-3`}
+                        className={`bg-asphalt border ${isCurrent ? 'border-acid' : 'border-bunker'} p-3.5 rounded-sm space-y-3`}
                       >
                         <div className="flex items-center justify-between">
-                          <span className="font-display text-lg" style={{ color: m.color }}>
+                          <span className="font-display text-lg" style={{ color: resolvedColor }}>
                             {m.name} {isCurrent ? '(Você)' : ''}
                           </span>
                           <span className="font-mono text-[9px] text-stencil uppercase">{m.handle}</span>
@@ -1682,7 +1752,7 @@ export default function App() {
                                 type="text"
                                 value={editRole}
                                 onChange={(e) => setEditRole(e.target.value)}
-                                className="w-full bg-concrete border border-neutral-700 rounded-sm px-2.5 py-1.5 text-xs text-white font-mono focus:border-acid focus:outline-none"
+                                className="w-full bg-concrete border border-bunker rounded-sm px-2.5 py-1.5 text-xs text-chalk font-mono focus:border-acid focus:outline-none"
                               />
                             </div>
 
@@ -1696,19 +1766,19 @@ export default function App() {
                                     src={editAvatar}
                                     alt="Preview Avatar"
                                     className="w-14 h-14 rounded-sm object-cover border-2 shrink-0"
-                                    style={{ borderColor: m.color }}
+                                    style={{ borderColor: resolvedColor }}
                                   />
                                 ) : (
                                   <div
                                     className="w-14 h-14 rounded-sm bg-concrete border flex items-center justify-center font-display text-2xl shrink-0"
-                                    style={{ borderColor: m.color, color: m.color }}
+                                    style={{ borderColor: resolvedColor, color: resolvedColor }}
                                   >
                                     {m.name[0]}
                                   </div>
                                 )}
 
                                 <div className="flex-1">
-                                  <label className="w-full bg-concrete hover:bg-neutral-800 border border-neutral-700 hover:border-acid rounded-sm p-2 text-center cursor-pointer block transition-colors">
+                                  <label className="w-full bg-concrete hover:bg-bunker border border-bunker hover:border-acid rounded-sm p-2 text-center cursor-pointer block transition-colors">
                                     <input
                                       type="file"
                                       accept="image/*"
@@ -1737,7 +1807,7 @@ export default function App() {
                                 value={editAvatar}
                                 onChange={(e) => setEditAvatar(e.target.value)}
                                 placeholder="Ou cole URL da foto / GIF"
-                                className="w-full bg-concrete border border-neutral-800 rounded-sm px-2 py-1 text-[10px] text-stencil font-mono focus:border-acid focus:outline-none"
+                                className="w-full bg-concrete border border-bunker rounded-sm px-2 py-1 text-[10px] text-stencil font-mono focus:border-acid focus:outline-none"
                               />
                             </div>
 
@@ -1748,16 +1818,16 @@ export default function App() {
                                 value={editPassword}
                                 onChange={(e) => setEditPassword(e.target.value)}
                                 placeholder="Alterar ou definir senha"
-                                className="w-full bg-concrete border border-neutral-700 rounded-sm px-2.5 py-1.5 text-xs text-white font-mono focus:border-acid focus:outline-none"
+                                className="w-full bg-concrete border border-bunker rounded-sm px-2.5 py-1.5 text-xs text-chalk font-mono focus:border-acid focus:outline-none"
                               />
                             </div>
                           </>
                         ) : (
                           <div className="flex items-center gap-2.5 pt-1">
                             {m.customAvatar ? (
-                              <img src={m.customAvatar} alt={m.name} className="w-9 h-9 rounded-sm object-cover border" style={{ borderColor: m.color }} />
+                              <img src={m.customAvatar} alt={m.name} className="w-9 h-9 rounded-sm object-cover border" style={{ borderColor: resolvedColor }} />
                             ) : (
-                              <div className="w-9 h-9 rounded-sm bg-concrete flex items-center justify-center font-display text-sm" style={{ color: m.color }}>
+                              <div className="w-9 h-9 rounded-sm bg-concrete flex items-center justify-center font-display text-sm" style={{ color: resolvedColor }}>
                                 {m.name[0]}
                               </div>
                             )}
@@ -1772,7 +1842,7 @@ export default function App() {
                 <button
                   type="button"
                   onClick={saveSquadProfile}
-                  className="w-full bg-acid text-black font-display text-xl tracking-widest py-3 rounded-sm border-2 border-black shadow-[4px_4px_0px_#000] active:translate-y-1 active:shadow-none transition-all cursor-pointer font-bold"
+                  className="w-full bg-acid text-asphalt font-display text-xl tracking-widest py-3 rounded-sm border-2 border-asphalt shadow-[4px_4px_0px_var(--color-asphalt)] active:translate-y-1 active:shadow-none transition-all cursor-pointer font-bold"
                 >
                   SALVAR ALTERAÇÕES
                 </button>
@@ -1783,12 +1853,12 @@ export default function App() {
           {/* FULL MEDIA MODAL COM DOWNLOAD EM ALTA QUALIDADE */}
           {fullMediaModalItem && (
             <div
-              className="fixed inset-0 z-[120] bg-black/95 backdrop-blur-md flex flex-col items-center justify-between p-3 sm:p-5"
+              className="fixed inset-0 z-[120] bg-asphalt/95 backdrop-blur-md flex flex-col items-center justify-between p-3 sm:p-5"
             >
               {/* Header do Modal */}
-              <div className="w-full max-w-xl flex items-center justify-between pb-2 border-b border-neutral-800 z-10">
+              <div className="w-full max-w-xl flex items-center justify-between pb-2 border-b border-bunker z-10">
                 <div className="flex items-center gap-2 min-w-0 pr-2">
-                  <span className="font-display tracking-wider uppercase text-base" style={{ color: fullMediaModalItem.authorColor }}>
+                  <span className="font-display tracking-wider uppercase text-base" style={{ color: normalizeSquadColor(fullMediaModalItem.authorColor) }}>
                     {fullMediaModalItem.authorName}
                   </span>
                   <span className="text-stencil font-mono text-[10px]">
@@ -1800,7 +1870,7 @@ export default function App() {
                   <button
                     type="button"
                     onClick={() => downloadMediaFile(fullMediaModalItem.url, `TMJ_${fullMediaModalItem.id}.${fullMediaModalItem.type === 'video' ? 'mp4' : 'jpg'}`)}
-                    className="bg-acid text-black font-mono text-xs font-bold px-3 py-1.5 rounded-sm flex items-center gap-1.5 shadow-sm active:translate-y-0.5 cursor-pointer"
+                    className="bg-acid text-asphalt font-mono text-xs font-bold px-3 py-1.5 rounded-sm flex items-center gap-1.5 shadow-sm active:translate-y-0.5 cursor-pointer"
                   >
                     <Download className="w-3.5 h-3.5" />
                     <span>BAIXAR ORIGINAL</span>
@@ -1808,7 +1878,7 @@ export default function App() {
                   <button
                     type="button"
                     onClick={() => setFullMediaModalItem(null)}
-                    className="w-8 h-8 rounded-sm bg-bunker text-white hover:bg-neutral-700 flex items-center justify-center cursor-pointer"
+                    className="w-8 h-8 rounded-sm bg-bunker text-chalk hover:bg-concrete flex items-center justify-center cursor-pointer"
                   >
                     <X className="w-5 h-5" />
                   </button>
@@ -1826,7 +1896,7 @@ export default function App() {
 
               {/* Legenda na base */}
               {fullMediaModalItem.caption && (
-                <div className="w-full max-w-xl bg-concrete/90 border border-neutral-800 p-2.5 rounded-sm text-center">
+                <div className="w-full max-w-xl bg-concrete/90 border border-bunker p-2.5 rounded-sm text-center">
                   <p className="font-sans text-xs text-chalk">{fullMediaModalItem.caption}</p>
                 </div>
               )}
