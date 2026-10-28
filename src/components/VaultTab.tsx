@@ -20,7 +20,7 @@ import { MediaReactions } from './MediaReactions';
 
 interface VaultTabProps {
   drops: VaultDrop[];
-  activeMember?: SquadMember | null;
+  activeMember: SquadMember;
   onDeleteDrop: (id: string) => void;
   onAddComment: (dropId: string, commentText: string) => void;
   onLikeDrop: (dropId: string) => void;
@@ -167,19 +167,19 @@ export const VaultTab: React.FC<VaultTabProps> = ({
           {filteredDrops.map((item) => (
             <div
               key={item.id}
-              onClick={() => setPreviewMedia({ url: item.url, type: item.type, title: item.title })}
+              onClick={() => setPreviewMedia({ url: item.midiaUrl || item.url, type: item.type, title: item.title })}
               className="bg-concrete border border-neutral-800 rounded-sm overflow-hidden aspect-square relative group cursor-pointer"
             >
               {item.type === 'photo' && (
                 <img
-                  src={item.url}
+                  src={item.midiaUrl || item.url}
                   alt={item.title}
                   className="w-full h-full object-cover group-hover:scale-105 transition-transform"
                 />
               )}
               {item.type === 'video' && (
                 <div className="w-full h-full bg-asphalt flex items-center justify-center relative">
-                  <video src={item.url} className="w-full h-full object-cover" muted playsInline />
+                  <video src={item.midiaUrl || item.url} className="w-full h-full object-cover" muted playsInline />
                   <div className="absolute inset-0 bg-black/40 flex items-center justify-center">
                     <VideoIcon className="w-8 h-8 text-acid" />
                   </div>
@@ -206,7 +206,7 @@ export const VaultTab: React.FC<VaultTabProps> = ({
       {viewMode === 'feed' && (
         <div className="space-y-6">
           {filteredDrops.map((item) => {
-            const isMine = !isViewerMode && activeMember && item.authorId === activeMember.id;
+            const isMine = !isViewerMode && item.authorId === activeMember.id;
             const isAudioPlaying = playingAudioId === item.id;
 
             return (
@@ -256,14 +256,14 @@ export const VaultTab: React.FC<VaultTabProps> = ({
 
                 {/* Media Presentation */}
                 {item.type === 'photo' && (
-                  <div className="relative group bg-black overflow-hidden flex items-center justify-center">
+                  <div className="relative group bg-black max-h-[460px] overflow-hidden flex items-center justify-center">
                     <img
-                      src={item.url}
+                      src={item.midiaUrl || item.url}
                       alt={item.title}
-                      className="w-full max-h-[75vh] object-contain cursor-pointer block mx-auto bg-black"
+                      className="w-full max-h-[460px] object-contain"
                     />
                     <button
-                      onClick={() => setPreviewMedia({ url: item.url, type: 'photo', title: item.title })}
+                      onClick={() => setPreviewMedia({ url: item.midiaUrl || item.url, type: 'photo', title: item.title })}
                       className="absolute top-2 right-2 bg-black/70 hover:bg-black text-white p-1.5 rounded-sm opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer"
                     >
                       <Maximize2 className="w-4 h-4" />
@@ -274,9 +274,9 @@ export const VaultTab: React.FC<VaultTabProps> = ({
                 {item.type === 'video' && (
                   <div className="relative bg-black">
                     <StreetVideoPlayer
-                      src={item.url}
+                      src={item.midiaUrl || item.url}
                       className="w-full"
-                      onFullscreenRequest={() => setPreviewMedia({ url: item.url, type: 'video', title: item.title })}
+                      onFullscreenRequest={() => setPreviewMedia({ url: item.midiaUrl || item.url, type: 'video', title: item.title })}
                     />
                   </div>
                 )}
@@ -285,7 +285,7 @@ export const VaultTab: React.FC<VaultTabProps> = ({
                   <div className="p-4 bg-bunker border-y border-neutral-800">
                     <div className="flex items-center gap-3">
                       <button
-                        onClick={() => handleAudioToggle(item.id, item.url)}
+                        onClick={() => handleAudioToggle(item.id, item.midiaUrl || item.url)}
                         className="w-12 h-12 rounded-sm bg-acid text-black flex items-center justify-center shadow-[3px_3px_0px_#ff5500] active:translate-y-0.5 transition-all cursor-pointer shrink-0"
                       >
                         {isAudioPlaying ? (
@@ -367,7 +367,7 @@ export const VaultTab: React.FC<VaultTabProps> = ({
                     <MediaReactions
                       reactions={item.reactions}
                       reactedBy={item.reactedBy}
-                      currentUserId={activeMember?.id || 'viewer'}
+                      currentUserId={activeMember.id}
                       onToggleReaction={(emoji) => onToggleReaction?.(item.id, emoji)}
                     />
                   </div>

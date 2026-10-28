@@ -6,18 +6,18 @@ service cloud.firestore {
     }
 
     // Artifacts data collections (used by TMJ app)
-    match /artifacts/{appId}/public/data/{col}/{docId} {
+    match /artifacts/{appId}/public/data/{col}/{document=**} {
       allow read, write: if true;
     }
 
     // Direct root collections
-    match /tmj_members/{memberId} {
+    match /tmj_members/{document=**} {
       allow read, write: if true;
     }
-    match /tmj_vault/{dropId} {
+    match /tmj_vault/{document=**} {
       allow read, write: if true;
     }
-    match /tmj_chat/{messageId} {
+    match /tmj_chat/{document=**} {
       allow read, write: if true;
     }
   }
