@@ -15,13 +15,17 @@ import {
   X
 } from 'lucide-react';
 import { toggleBeatPlayback } from '../utils/audioSynth';
+import { StreetVideoPlayer } from './StreetVideoPlayer';
+import { MediaReactions } from './MediaReactions';
 
 interface VaultTabProps {
   drops: VaultDrop[];
-  activeMember: SquadMember;
+  activeMember?: SquadMember | null;
   onDeleteDrop: (id: string) => void;
   onAddComment: (dropId: string, commentText: string) => void;
   onLikeDrop: (dropId: string) => void;
+  onToggleReaction?: (dropId: string, emoji: string) => void;
+  isViewerMode?: boolean;
 }
 
 export const VaultTab: React.FC<VaultTabProps> = ({
@@ -29,7 +33,9 @@ export const VaultTab: React.FC<VaultTabProps> = ({
   activeMember,
   onDeleteDrop,
   onAddComment,
-  onLikeDrop
+  onLikeDrop,
+  onToggleReaction,
+  isViewerMode = false
 }) => {
   const [filterType, setFilterType] = useState<'all' | 'photo' | 'video' | 'audio'>('all');
   const [viewMode, setViewMode] = useState<'feed' | 'grid'>('feed');
@@ -47,15 +53,12 @@ export const VaultTab: React.FC<VaultTabProps> = ({
       toggleBeatPlayback(() => setPlayingAudioId(null));
       setPlayingAudioId(null);
     } else {
-      // If it is standard audio or data url
       if (url.startsWith('data:audio/wav;base64,UklGRiQAAABXQVZF')) {
-        // Use synthesizer beat
         toggleBeatPlayback((playing) => {
           if (!playing) setPlayingAudioId(null);
         });
         setPlayingAudioId(dropId);
       } else {
-        // Real audio element
         const audioEl = document.getElementById(`audio-el-${dropId}`) as HTMLAudioElement;
         if (audioEl) {
           if (audioEl.paused) {
@@ -66,7 +69,6 @@ export const VaultTab: React.FC<VaultTabProps> = ({
             setPlayingAudioId(null);
           }
         } else {
-          // Fallback synth
           toggleBeatPlayback((playing) => {
             if (!playing) setPlayingAudioId(null);
           });
@@ -177,7 +179,7 @@ export const VaultTab: React.FC<VaultTabProps> = ({
               )}
               {item.type === 'video' && (
                 <div className="w-full h-full bg-asphalt flex items-center justify-center relative">
-                  <video src={item.url} className="w-full h-full object-cover" muted />
+                  <video src={item.url} className="w-full h-full object-cover" muted playsInline />
                   <div className="absolute inset-0 bg-black/40 flex items-center justify-center">
                     <VideoIcon className="w-8 h-8 text-acid" />
                   </div>
@@ -204,7 +206,7 @@ export const VaultTab: React.FC<VaultTabProps> = ({
       {viewMode === 'feed' && (
         <div className="space-y-6">
           {filteredDrops.map((item) => {
-            const isMine = item.authorId === activeMember.id;
+            const isMine = !isViewerMode && activeMember && item.authorId === activeMember.id;
             const isAudioPlaying = playingAudioId === item.id;
 
             return (
@@ -254,11 +256,11 @@ export const VaultTab: React.FC<VaultTabProps> = ({
 
                 {/* Media Presentation */}
                 {item.type === 'photo' && (
-                  <div className="relative group bg-black max-h-[460px] overflow-hidden flex items-center justify-center">
+                  <div className="relative group bg-black overflow-hidden flex items-center justify-center">
                     <img
                       src={item.url}
                       alt={item.title}
-                      className="w-full max-h-[460px] object-cover"
+                      className="w-full max-h-[75vh] object-contain cursor-pointer block mx-auto bg-black"
                     />
                     <button
                       onClick={() => setPreviewMedia({ url: item.url, type: 'photo', title: item.title })}
@@ -271,15 +273,11 @@ export const VaultTab: React.FC<VaultTabProps> = ({
 
                 {item.type === 'video' && (
                   <div className="relative bg-black">
-                    <video
+                    <StreetVideoPlayer
                       src={item.url}
-                      controls
-                      playsInline
-                      className="w-full max-h-[460px] object-cover"
+                      className="w-full"
+                      onFullscreenRequest={() => setPreviewMedia({ url: item.url, type: 'video', title: item.title })}
                     />
-                    <div className="absolute top-2 left-2 bg-black/70 text-sprayCyan font-mono text-[9px] px-2 py-0.5 rounded-sm border border-sprayCyan/30">
-                      REC ● VHS CAM
-                    </div>
                   </div>
                 )}
 
@@ -349,7 +347,7 @@ export const VaultTab: React.FC<VaultTabProps> = ({
                   )}
 
                   {/* Actions Row */}
-                  <div className="flex items-center justify-between border-t border-neutral-800/80 pt-2 mb-3">
+                  <div className="flex items-center justify-between border-t border-neutral-800/80 pt-2 mb-2">
                     <button
                       onClick={() => onLikeDrop(item.id)}
                       className="flex items-center gap-1.5 text-stencil hover:text-urbanOrange font-mono text-xs cursor-pointer group"
@@ -362,6 +360,16 @@ export const VaultTab: React.FC<VaultTabProps> = ({
                       <MessageSquare className="w-3.5 h-3.5" />
                       <span>{item.comments?.length || 0} comentários</span>
                     </span>
+                  </div>
+
+                  {/* Street Emoji Reactions System */}
+                  <div className="pt-1 pb-3 border-b border-neutral-800/80 mb-3">
+                    <MediaReactions
+                      reactions={item.reactions}
+                      reactedBy={item.reactedBy}
+                      currentUserId={activeMember?.id || 'viewer'}
+                      onToggleReaction={(emoji) => onToggleReaction?.(item.id, emoji)}
+                    />
                   </div>
 
                   {/* Comments thread */}
@@ -380,26 +388,34 @@ export const VaultTab: React.FC<VaultTabProps> = ({
                   )}
 
                   {/* Comment Input */}
-                  <div className="flex items-center gap-2">
-                    <input
-                      type="text"
-                      placeholder="Mandar comentário..."
-                      value={commentInputs[item.id] || ''}
-                      onChange={(e) =>
-                        setCommentInputs((prev) => ({ ...prev, [item.id]: e.target.value }))
-                      }
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter') submitComment(item.id);
-                      }}
-                      className="flex-1 bg-asphalt border border-neutral-800 rounded-sm px-3 py-1.5 text-xs text-white focus:outline-none focus:border-acid font-mono"
-                    />
-                    <button
-                      onClick={() => submitComment(item.id)}
-                      className="bg-bunker hover:bg-neutral-700 text-acid px-3 py-1.5 rounded-sm border border-neutral-700 font-mono text-xs flex items-center gap-1 cursor-pointer"
-                    >
-                      <Send className="w-3 h-3" />
-                    </button>
-                  </div>
+                  {!isViewerMode ? (
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="text"
+                        placeholder="Mandar comentário..."
+                        value={commentInputs[item.id] || ''}
+                        onChange={(e) =>
+                          setCommentInputs((prev) => ({ ...prev, [item.id]: e.target.value }))
+                        }
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') submitComment(item.id);
+                        }}
+                        className="flex-1 bg-asphalt border border-neutral-800 rounded-sm px-3 py-1.5 text-xs text-white focus:outline-none focus:border-acid font-mono"
+                      />
+                      <button
+                        onClick={() => submitComment(item.id)}
+                        className="bg-bunker hover:bg-neutral-700 text-acid px-3 py-1.5 rounded-sm border border-neutral-700 font-mono text-xs flex items-center gap-1 cursor-pointer"
+                      >
+                        <Send className="w-3 h-3" />
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="bg-asphalt/60 border border-neutral-800 rounded-xs py-1.5 px-2.5 text-center">
+                      <p className="font-mono text-[10px] text-stencil">
+                        Modo Espectador: comentários restritos ao trio. Reaja com os emojis acima!
+                      </p>
+                    </div>
+                  )}
                 </div>
               </article>
             );
@@ -425,11 +441,10 @@ export const VaultTab: React.FC<VaultTabProps> = ({
               />
             )}
             {previewMedia.type === 'video' && (
-              <video
+              <StreetVideoPlayer
                 src={previewMedia.url}
-                controls
                 autoPlay
-                className="max-w-full max-h-[70vh] object-contain rounded-sm"
+                className="w-full max-h-[70vh] rounded-sm"
               />
             )}
             <p className="font-display text-xl text-white mt-4 tracking-wider">

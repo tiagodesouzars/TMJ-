@@ -23,7 +23,7 @@
       "type": "object",
       "properties": {
         "id": { "type": "string", "description": "Unique drop ID" },
-        "type": { "type": "string", "enum": ["photo", "video", "audio"], "description": "Media category" },
+        "type": { "type": "string", "enum": ["photo", "video", "audio", "image"], "description": "Media category" },
         "title": { "type": "string", "description": "Title or headline of the drop" },
         "caption": { "type": "string", "description": "Description or fit details" },
         "url": { "type": "string", "description": "Media URL or embedded source" },
@@ -31,7 +31,9 @@
         "authorName": { "type": "string", "description": "Name of author" },
         "authorHandle": { "type": "string", "description": "Handle of author" },
         "tag": { "type": "string", "description": "Tag category e.g. Fit Check, Sneakers, Rolê, Beat" },
-        "createdAt": { "type": "string", "description": "Creation timestamp" }
+        "createdAt": { "type": "string", "description": "Creation timestamp" },
+        "reactions": { "type": "object", "description": "Map of fixed emojis to reaction counts" },
+        "reactedBy": { "type": "object", "description": "Map of fixed emojis to user/viewer identifiers" }
       },
       "required": ["id", "type", "title", "url", "authorId", "authorName", "createdAt"]
     },

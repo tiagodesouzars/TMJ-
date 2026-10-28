@@ -1,3 +1,9 @@
+export const FIXED_REACTION_EMOJIS = [
+  '❤️', '😋', '😒', '😎', '😴', '🤬', '🤮', '🤕', '🤫', '😈', '💩', '😏', '🔥', '💪'
+] as const;
+
+export type FixedReactionEmoji = typeof FIXED_REACTION_EMOJIS[number];
+
 export interface SquadMember {
   id: string;
   name: string;
@@ -32,6 +38,8 @@ export interface VaultDrop {
   timestamp: number;
   comments?: VaultComment[];
   likes?: number;
+  reactions?: Record<string, number>;
+  reactedBy?: Record<string, string[]>;
 }
 
 export interface ChatMessage {

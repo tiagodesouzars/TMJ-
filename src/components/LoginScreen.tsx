@@ -1,19 +1,21 @@
 import React, { useState } from 'react';
 import { SquadMember } from '../types';
-import { UserCheck, Lock, X, Database } from 'lucide-react';
+import { UserCheck, Lock, X, Database, Eye, ArrowRight } from 'lucide-react';
 
 interface LoginScreenProps {
   members: SquadMember[];
   onSelectMember: (member: SquadMember) => void;
   onOpenProjectInfo: () => void;
   isDbConnected: boolean;
+  onEnterViewerMode?: () => void;
 }
 
 export const LoginScreen: React.FC<LoginScreenProps> = ({
   members,
   onSelectMember,
   onOpenProjectInfo,
-  isDbConnected
+  isDbConnected,
+  onEnterViewerMode
 }) => {
   const [passwordTarget, setPasswordTarget] = useState<SquadMember | null>(null);
   const [pinInput, setPinInput] = useState('');
@@ -121,8 +123,37 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
         ))}
       </div>
 
-      <div className="mt-8 text-center font-mono text-[11px] text-stencil/60">
-        Clique no seu nome para carregar o vault
+      {/* Visualizar Mode Public Entry */}
+      {onEnterViewerMode && (
+        <div className="w-full max-w-[340px] mt-4 pt-3 border-t border-neutral-800">
+          <button
+            type="button"
+            onClick={onEnterViewerMode}
+            className="w-full bg-concrete border-2 border-sprayCyan/70 hover:border-sprayCyan rounded-sm p-3 flex items-center justify-between shadow-[4px_4px_0px_#000] active:translate-y-1 active:shadow-none transition-all cursor-pointer group"
+          >
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-sm bg-asphalt border border-sprayCyan/50 flex items-center justify-center text-sprayCyan group-hover:bg-sprayCyan group-hover:text-asphalt transition-colors shrink-0">
+                <Eye className="w-5 h-5" />
+              </div>
+              <div className="text-left">
+                <div className="flex items-center gap-1.5">
+                  <h4 className="font-display text-lg text-white tracking-wider leading-none">VISUALIZAR</h4>
+                  <span className="font-mono text-[8px] bg-sprayCyan/20 text-sprayCyan px-1.5 py-0.5 rounded-xs border border-sprayCyan/40 font-bold uppercase">
+                    LIVRE
+                  </span>
+                </div>
+                <p className="font-mono text-[10px] text-stencil mt-1">
+                  Apenas ver fotos, vídeos e reagir com emojis
+                </p>
+              </div>
+            </div>
+            <ArrowRight className="w-4 h-4 text-sprayCyan group-hover:translate-x-1 transition-transform shrink-0" />
+          </button>
+        </div>
+      )}
+
+      <div className="mt-6 text-center font-mono text-[11px] text-stencil/60">
+        Clique no seu nome para entrar ou em Visualizar para acesso livre
       </div>
 
       {/* Password Prompt Modal */}

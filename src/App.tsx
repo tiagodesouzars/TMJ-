@@ -27,9 +27,12 @@ import {
   LogOut,
   Upload,
   Download,
+  Eye,
   Image as ImageIcon,
   Video as VideoIcon
 } from 'lucide-react';
+import { StreetVideoPlayer } from './components/StreetVideoPlayer';
+import { MediaReactions, FIXED_REACTION_EMOJIS } from './components/MediaReactions';
 
 const TMJ_LOGO_URL = '/assets/aistudio/file_00000000547c820ea5b46970c320d81b_15046822.png';
 const TMJ_BANNER_URL = '/assets/aistudio/download_ce7e2314.jpg';
@@ -62,6 +65,8 @@ export interface VaultItem {
   caption?: string;
   timestamp: number;
   comments?: VaultComment[];
+  reactions?: Record<string, number>;
+  reactedBy?: Record<string, string[]>;
 }
 
 export interface ChatMessage {
@@ -98,6 +103,7 @@ export default function App() {
   const [currentScreen, setCurrentScreen] = useState<'splash' | 'login' | 'app'>('splash');
   const [activeTab, setActiveTab] = useState<'vault' | 'chat'>('vault');
   const [vaultViewMode, setVaultViewMode] = useState<'feed' | 'grid'>('feed');
+  const [isViewerMode, setIsViewerMode] = useState<boolean>(false);
 
   const [squadMembers, setSquadMembers] = useState<SquadMember[]>(DEFAULT_SQUAD);
   const [activeMember, setActiveMember] = useState<SquadMember | null>(null);
@@ -282,7 +288,7 @@ export default function App() {
 
   // Keep activeMember and selectedLoginUser in sync with freshest squad state
   useEffect(() => {
-    if (activeMember) {
+    if (activeMember && !isViewerMode) {
       const found = squadMembers.find((m) => m.id === activeMember.id);
       if (found) setActiveMember(found);
     }
@@ -290,7 +296,7 @@ export default function App() {
       const foundSelected = squadMembers.find((m) => m.id === selectedLoginUser.id);
       if (foundSelected) setSelectedLoginUser(foundSelected);
     }
-  }, [squadMembers]);
+  }, [squadMembers, isViewerMode]);
 
   // High-Quality Image & Video Processor (maximiza resolução mantendo dentro do limite de 1MB do documento)
   const processMediaForBestQuality = (file: File, callback: (base64: string) => void) => {
@@ -482,6 +488,90 @@ export default function App() {
 
     try {
       await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'tmj_vault', docId), updatedItem, { merge: true });
+    } catch (err) {
+      handleFirestoreError(err, OperationType.UPDATE, `tmj_vault/${docId}`);
+    }
+  };
+
+  // Helper to get persistent identifier for user or viewer
+  const getCurrentActorId = () => {
+    if (activeMember?.id) return activeMember.id;
+    let viewerId = typeof window !== 'undefined' ? localStorage.getItem('tmj_viewer_id') : null;
+    if (!viewerId) {
+      viewerId = 'guest_' + Math.random().toString(36).substring(2, 9);
+      if (typeof window !== 'undefined') localStorage.setItem('tmj_viewer_id', viewerId);
+    }
+    return viewerId;
+  };
+
+  // Entry handler for Visualizar (Guest / Public viewer)
+  const handleEnterViewerMode = () => {
+    let viewerId = typeof window !== 'undefined' ? localStorage.getItem('tmj_viewer_id') : null;
+    if (!viewerId) {
+      viewerId = 'guest_' + Math.random().toString(36).substring(2, 9);
+      if (typeof window !== 'undefined') localStorage.setItem('tmj_viewer_id', viewerId);
+    }
+    const guestMember: SquadMember = {
+      id: viewerId,
+      name: 'VISITANTE',
+      handle: '@espectador',
+      role: 'Apenas Ver',
+      color: 'var(--color-sprayCyan)',
+      password: null,
+      customAvatar: null
+    };
+    setIsViewerMode(true);
+    setActiveMember(guestMember);
+    setActiveTab('vault');
+    setCurrentScreen('app');
+  };
+
+  // Emoji Reaction Toggle (Available to squad members and visualizer viewers)
+  const handleToggleReaction = async (docId: string, emoji: string) => {
+    const item = vaultItems.find((i) => (i.docId || i.id) === docId);
+    if (!item) return;
+
+    const actorId = activeMember?.id || getCurrentActorId();
+    const currentReactions: Record<string, number> = { ...(item.reactions || {}) };
+    const currentReactedBy: Record<string, string[]> = { ...(item.reactedBy || {}) };
+
+    const userList: string[] = currentReactedBy[emoji] || [];
+    const alreadyReacted = userList.includes(actorId);
+
+    let newUserList: string[];
+    let newCount: number;
+
+    if (alreadyReacted) {
+      newUserList = userList.filter((u) => u !== actorId);
+      newCount = Math.max(0, (currentReactions[emoji] || 1) - 1);
+    } else {
+      newUserList = [...userList, actorId];
+      newCount = (currentReactions[emoji] || 0) + 1;
+    }
+
+    const updatedReactions = { ...currentReactions, [emoji]: newCount };
+    const updatedReactedBy = { ...currentReactedBy, [emoji]: newUserList };
+
+    const updatedItem: VaultItem = {
+      ...item,
+      reactions: updatedReactions,
+      reactedBy: updatedReactedBy
+    };
+
+    setVaultItems((prev) =>
+      prev.map((i) => ((i.docId || i.id) === docId ? updatedItem : i))
+    );
+
+    if (fullMediaModalItem && (fullMediaModalItem.docId || fullMediaModalItem.id) === docId) {
+      setFullMediaModalItem(updatedItem);
+    }
+
+    try {
+      await setDoc(
+        doc(db, 'artifacts', appId, 'public', 'data', 'tmj_vault', docId),
+        { reactions: updatedReactions, reactedBy: updatedReactedBy },
+        { merge: true }
+      );
     } catch (err) {
       handleFirestoreError(err, OperationType.UPDATE, `tmj_vault/${docId}`);
     }
@@ -1046,6 +1136,36 @@ export default function App() {
             })}
           </div>
 
+          {/* NOVA ENTRADA: VISUALIZAR (ACESSO PÚBLICO SEM LOGIN) */}
+          <div className="w-full pt-3 mt-1">
+            <button
+              type="button"
+              onClick={handleEnterViewerMode}
+              className="w-full bg-concrete hover:bg-bunker border-2 border-sprayCyan/70 hover:border-sprayCyan p-3 rounded-sm flex items-center justify-between cursor-pointer transition-all shadow-[4px_4px_0px_var(--color-asphalt)] active:translate-y-0.5 active:shadow-none group"
+            >
+              <div className="flex items-center gap-3">
+                <div className="w-11 h-11 rounded-sm bg-asphalt border border-sprayCyan/60 flex items-center justify-center text-sprayCyan group-hover:bg-sprayCyan group-hover:text-asphalt transition-colors shrink-0">
+                  <Eye className="w-5 h-5" />
+                </div>
+                <div className="text-left">
+                  <div className="flex items-center gap-1.5">
+                    <h4 className="font-display text-lg sm:text-xl text-chalk tracking-wide leading-none">VISUALIZAR</h4>
+                    <span className="font-mono text-[8px] bg-sprayCyan/20 text-sprayCyan px-1.5 py-0.5 rounded-xs border border-sprayCyan/40 font-bold uppercase">
+                      LIVRE
+                    </span>
+                  </div>
+                  <p className="font-mono text-[10px] text-stencil mt-1">
+                    Ver fotos, vídeos e reagir com emojis
+                  </p>
+                </div>
+              </div>
+              <ArrowRight className="w-4 h-4 text-sprayCyan group-hover:translate-x-1 transition-transform shrink-0" />
+            </button>
+            <p className="font-mono text-[9px] text-stencil/60 text-center mt-2">
+              Acesso exclusivo à aba mídias • Sem necessidade de senha
+            </p>
+          </div>
+
           {/* Modal Interno de Senha */}
           {isPasswordPromptOpen && selectedLoginUser && (
             <div id="password-prompt" className="absolute inset-x-4 bottom-6 bg-bunker border border-bunker p-6 rounded-sm shadow-2xl max-w-[340px] mx-auto z-50">
@@ -1101,7 +1221,9 @@ export default function App() {
           className={`w-full max-w-[460px] bg-concrete-texture border-x border-bunker/80 flex flex-col relative z-10 shadow-2xl ${
             activeTab === 'chat'
               ? 'h-[100dvh] max-h-[100dvh] overflow-hidden'
-              : 'min-h-screen pb-20'
+              : isViewerMode
+                ? 'min-h-screen pb-6'
+                : 'min-h-screen pb-20'
           }`}
         >
           
@@ -1122,25 +1244,49 @@ export default function App() {
               />
 
               <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={openSquadModal}
-                  className="bg-concrete border border-bunker hover:border-acid rounded-sm px-3 py-1.5 flex items-center gap-1.5 text-[10px] font-mono text-chalk shadow-[2px_2px_0px_var(--color-asphalt)] active:translate-y-[2px] active:shadow-none transition-all cursor-pointer"
-                >
-                  <span>SQUAD ID</span>
-                  <BadgeCheck className="w-3.5 h-3.5 text-acid" />
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setActiveMember(null);
-                    setCurrentScreen('login');
-                  }}
-                  title="Sair da conta"
-                  className="bg-bunker border border-bunker rounded-sm w-8 h-7 flex items-center justify-center text-stencil hover:text-urbanOrange transition-colors cursor-pointer"
-                >
-                  <LogOut className="w-3.5 h-3.5" />
-                </button>
+                {isViewerMode ? (
+                  <div className="flex items-center gap-2">
+                    <div className="bg-concrete border border-sprayCyan/50 rounded-sm px-2.5 py-1 flex items-center gap-1.5 text-[10px] font-mono text-sprayCyan font-bold">
+                      <Eye className="w-3.5 h-3.5 text-sprayCyan" />
+                      <span>VISUALIZANDO</span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsViewerMode(false);
+                        setActiveMember(null);
+                        setCurrentScreen('login');
+                      }}
+                      title="Entrar com conta do Squad"
+                      className="bg-bunker hover:bg-concrete border border-bunker hover:border-acid rounded-sm px-2.5 py-1 flex items-center gap-1.5 font-mono text-[10px] text-chalk transition-colors cursor-pointer"
+                    >
+                      <span>LOGIN SQUAD</span>
+                      <LogOut className="w-3 h-3 text-acid" />
+                    </button>
+                  </div>
+                ) : (
+                  <>
+                    <button
+                      type="button"
+                      onClick={openSquadModal}
+                      className="bg-concrete border border-bunker hover:border-acid rounded-sm px-3 py-1.5 flex items-center gap-1.5 text-[10px] font-mono text-chalk shadow-[2px_2px_0px_var(--color-asphalt)] active:translate-y-[2px] active:shadow-none transition-all cursor-pointer"
+                    >
+                      <span>SQUAD ID</span>
+                      <BadgeCheck className="w-3.5 h-3.5 text-acid" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setActiveMember(null);
+                        setCurrentScreen('login');
+                      }}
+                      title="Sair da conta"
+                      className="bg-bunker border border-bunker rounded-sm w-8 h-7 flex items-center justify-center text-stencil hover:text-urbanOrange transition-colors cursor-pointer"
+                    >
+                      <LogOut className="w-3.5 h-3.5" />
+                    </button>
+                  </>
+                )}
               </div>
             </div>
           </header>
@@ -1264,7 +1410,7 @@ export default function App() {
                   <div id="vault-items-container" className="space-y-6">
                     {vaultItems.map((item) => {
                       const docId = item.docId || item.id;
-                      const isMine = item.authorId === activeMember.id;
+                      const isMine = !isViewerMode && activeMember && item.authorId === activeMember.id;
                       const resolvedAuthorColor = normalizeSquadColor(item.authorColor);
 
                       return (
@@ -1293,7 +1439,11 @@ export default function App() {
 
                           <div className="relative group bg-asphalt">
                             {item.type === 'video' ? (
-                              <video src={item.url} className="w-full max-h-96 object-cover" controls playsInline></video>
+                              <StreetVideoPlayer
+                                src={item.url}
+                                className="w-full max-h-96"
+                                onFullscreenRequest={() => setFullMediaModalItem(item)}
+                              />
                             ) : (
                               <img
                                 src={item.url}
@@ -1302,7 +1452,7 @@ export default function App() {
                                 onClick={() => setFullMediaModalItem(item)}
                               />
                             )}
-                            <div className="absolute top-2 right-2 bg-asphalt/85 px-1.5 py-0.5 rounded-sm border border-bunker pointer-events-none">
+                            <div className="absolute top-2 right-2 bg-asphalt/85 px-1.5 py-0.5 rounded-sm border border-bunker pointer-events-none z-10">
                               <img src={TMJ_LOGO_URL} alt="TMJ" className="h-5 w-auto object-contain mix-blend-screen" />
                             </div>
                             {isMine && (
@@ -1317,7 +1467,19 @@ export default function App() {
                           </div>
 
                           <div className="p-3 bg-concrete space-y-3">
-                            <p className="font-sans text-sm text-chalk">{item.caption || ''}</p>
+                            {item.caption && (
+                              <p className="font-sans text-sm text-chalk">{item.caption}</p>
+                            )}
+
+                            {/* SISTEMA DE REAÇÃO STREET COM 14 EMOJIS FIXOS */}
+                            <div className="pt-1 border-t border-bunker/80">
+                              <MediaReactions
+                                reactions={item.reactions}
+                                reactedBy={item.reactedBy}
+                                currentUserId={activeMember?.id || getCurrentActorId()}
+                                onToggleReaction={(emoji) => handleToggleReaction(docId, emoji)}
+                              />
+                            </div>
 
                             {/* Thread de Comentários */}
                             <div className="bg-asphalt border border-bunker rounded-sm p-2 space-y-1 max-h-36 overflow-y-auto">
@@ -1336,17 +1498,25 @@ export default function App() {
                               )}
                             </div>
 
-                            <input
-                              type="text"
-                              placeholder="Responder no drop..."
-                              className="w-full bg-asphalt border border-bunker rounded-sm px-3 py-2 text-xs text-chalk focus:border-acid focus:outline-none font-mono"
-                              onKeyDown={(e) => {
-                                if (e.key === 'Enter') {
-                                  addVaultComment(docId, (e.target as HTMLInputElement).value);
-                                  (e.target as HTMLInputElement).value = '';
-                                }
-                              }}
-                            />
+                            {!isViewerMode ? (
+                              <input
+                                type="text"
+                                placeholder="Responder no drop..."
+                                className="w-full bg-asphalt border border-bunker rounded-sm px-3 py-2 text-xs text-chalk focus:border-acid focus:outline-none font-mono"
+                                onKeyDown={(e) => {
+                                  if (e.key === 'Enter') {
+                                    addVaultComment(docId, (e.target as HTMLInputElement).value);
+                                    (e.target as HTMLInputElement).value = '';
+                                  }
+                                }}
+                              />
+                            ) : (
+                              <div className="bg-asphalt/60 border border-bunker/70 rounded-xs py-2 px-3 text-center">
+                                <p className="font-mono text-[10px] text-stencil">
+                                  Modo Espectador: comentários restritos ao trio. Deixe sua reação nos emojis acima! 👆
+                                </p>
+                              </div>
+                            )}
                           </div>
                         </div>
                       );
@@ -1379,7 +1549,7 @@ export default function App() {
                     </div>
                   ) : (
                     chatMessages.map((m) => {
-                      const isMine = m.authorId === activeMember.id;
+                      const isMine = !!activeMember && m.authorId === activeMember.id;
                       const isAudioPlaying = playingAudioId === m.id;
                       const durStr = `00:${String(m.duration || 5).padStart(2, '0')}`;
                       
@@ -1634,41 +1804,43 @@ export default function App() {
             )}
           </main>
 
-          {/* DOCK (OCULTO QUANDO O TECLADO VIRTUAL ESTIVER ABERTO) */}
-          <nav
-            className={`fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-[460px] z-40 bg-asphalt/95 backdrop-blur-lg border-t-2 border-bunker px-3 py-1.5 ${
-              isKeyboardOpen ? 'hidden' : 'flex'
-            } items-center justify-around`}
-          >
-            <button
-              id="nav-vault"
-              onClick={() => setActiveTab('vault')}
-              className={`flex flex-col items-center py-1 px-4 sm:px-6 cursor-pointer transition-colors ${activeTab === 'vault' ? 'text-acid' : 'text-stencil hover:text-chalk'}`}
+          {/* DOCK (OCULTO NO MODO VISUALIZAR OU QUANDO O TECLADO VIRTUAL ESTIVER ABERTO) */}
+          {!isViewerMode && (
+            <nav
+              className={`fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-[460px] z-40 bg-asphalt/95 backdrop-blur-lg border-t-2 border-bunker px-3 py-1.5 ${
+                isKeyboardOpen ? 'hidden' : 'flex'
+              } items-center justify-around`}
             >
-              <Layers className="w-4 h-4 sm:w-5 sm:h-5 mb-0.5" />
-              <span className="font-bebas tracking-widest text-[11px] sm:text-xs">MÍDIAS</span>
-            </button>
-            <button
-              onClick={() => {
-                setPendingUploadData(null);
-                setUploadCaption('');
-                setIsUploadModalOpen(true);
-              }}
-              translate="no"
-              className="notranslate -mt-4 sm:-mt-6 bg-acid text-asphalt font-display text-xs sm:text-base px-3.5 py-2 sm:px-5 sm:py-2.5 rounded-sm border-2 border-asphalt shadow-[3px_3px_0px_var(--color-urbanOrange)] active:translate-y-0.5 active:shadow-[1px_1px_0px_var(--color-urbanOrange)] transition-all cursor-pointer font-bold flex items-center gap-1 whitespace-nowrap shrink-0"
-            >
-              <Plus className="w-4 h-4 sm:w-5 sm:h-5 shrink-0" />
-              <span>ADD MÍDIA</span>
-            </button>
-            <button
-              id="nav-chat"
-              onClick={() => setActiveTab('chat')}
-              className={`flex flex-col items-center py-1 px-4 sm:px-6 cursor-pointer transition-colors ${activeTab === 'chat' ? 'text-acid' : 'text-stencil hover:text-chalk'}`}
-            >
-              <MessageSquare className="w-4 h-4 sm:w-5 sm:h-5 mb-0.5" />
-              <span className="font-bebas tracking-widest text-[11px] sm:text-xs">RESENHA</span>
-            </button>
-          </nav>
+              <button
+                id="nav-vault"
+                onClick={() => setActiveTab('vault')}
+                className={`flex flex-col items-center py-1 px-4 sm:px-6 cursor-pointer transition-colors ${activeTab === 'vault' ? 'text-acid' : 'text-stencil hover:text-chalk'}`}
+              >
+                <Layers className="w-4 h-4 sm:w-5 sm:h-5 mb-0.5" />
+                <span className="font-bebas tracking-widest text-[11px] sm:text-xs">MÍDIAS</span>
+              </button>
+              <button
+                onClick={() => {
+                  setPendingUploadData(null);
+                  setUploadCaption('');
+                  setIsUploadModalOpen(true);
+                }}
+                translate="no"
+                className="notranslate -mt-4 sm:-mt-6 bg-acid text-asphalt font-display text-xs sm:text-base px-3.5 py-2 sm:px-5 sm:py-2.5 rounded-sm border-2 border-asphalt shadow-[3px_3px_0px_var(--color-urbanOrange)] active:translate-y-0.5 active:shadow-[1px_1px_0px_var(--color-urbanOrange)] transition-all cursor-pointer font-bold flex items-center gap-1 whitespace-nowrap shrink-0"
+              >
+                <Plus className="w-4 h-4 sm:w-5 sm:h-5 shrink-0" />
+                <span>ADD MÍDIA</span>
+              </button>
+              <button
+                id="nav-chat"
+                onClick={() => setActiveTab('chat')}
+                className={`flex flex-col items-center py-1 px-4 sm:px-6 cursor-pointer transition-colors ${activeTab === 'chat' ? 'text-acid' : 'text-stencil hover:text-chalk'}`}
+              >
+                <MessageSquare className="w-4 h-4 sm:w-5 sm:h-5 mb-0.5" />
+                <span className="font-bebas tracking-widest text-[11px] sm:text-xs">RESENHA</span>
+              </button>
+            </nav>
+          )}
 
           {/* MODAL: ADD MÍDIA PRO VAULT */}
           {isUploadModalOpen && (
@@ -1704,7 +1876,7 @@ export default function App() {
                   ) : (
                     <div id="upload-preview-box" className="relative rounded-sm overflow-hidden max-h-56 flex items-center justify-center bg-asphalt border border-bunker">
                       {pendingUploadData.type === 'video' ? (
-                        <video src={pendingUploadData.url} className="w-full h-48 object-cover" controls></video>
+                        <StreetVideoPlayer src={pendingUploadData.url} className="w-full h-48" />
                       ) : (
                         <img src={pendingUploadData.url} alt="Preview" className="w-full h-48 object-cover" />
                       )}
@@ -1752,7 +1924,7 @@ export default function App() {
 
                 <div id="squad-edit-form" className="space-y-4 mb-6 max-h-[65vh] overflow-y-auto pr-1">
                   {squadMembers.map((m) => {
-                    const isCurrent = m.id === activeMember.id;
+                    const isCurrent = !!activeMember && m.id === activeMember.id;
                     const resolvedColor = normalizeSquadColor(m.color);
                     return (
                       <div
@@ -1910,18 +2082,28 @@ export default function App() {
               {/* Mídia Central */}
               <div className="flex-1 w-full max-w-xl flex items-center justify-center py-2 min-h-0">
                 {fullMediaModalItem.type === 'video' ? (
-                  <video src={fullMediaModalItem.url} controls autoPlay playsInline className="max-w-full max-h-[72vh] object-contain rounded-sm" />
+                  <StreetVideoPlayer
+                    src={fullMediaModalItem.url}
+                    autoPlay
+                    className="w-full max-h-[72vh] rounded-sm"
+                  />
                 ) : (
                   <img src={fullMediaModalItem.url} alt="Full view" className="max-w-full max-h-[72vh] object-contain rounded-sm shadow-2xl" />
                 )}
               </div>
 
-              {/* Legenda na base */}
-              {fullMediaModalItem.caption && (
-                <div className="w-full max-w-xl bg-concrete/90 border border-bunker p-2.5 rounded-sm text-center">
-                  <p className="font-sans text-xs text-chalk">{fullMediaModalItem.caption}</p>
-                </div>
-              )}
+              {/* Legenda e Reações na base */}
+              <div className="w-full max-w-xl bg-concrete border border-bunker p-3 rounded-sm space-y-2.5">
+                {fullMediaModalItem.caption && (
+                  <p className="font-sans text-xs text-chalk text-center">{fullMediaModalItem.caption}</p>
+                )}
+                <MediaReactions
+                  reactions={fullMediaModalItem.reactions}
+                  reactedBy={fullMediaModalItem.reactedBy}
+                  currentUserId={activeMember?.id || getCurrentActorId()}
+                  onToggleReaction={(emoji) => handleToggleReaction(fullMediaModalItem.docId || fullMediaModalItem.id, emoji)}
+                />
+              </div>
             </div>
           )}
         </div>
