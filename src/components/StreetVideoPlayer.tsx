@@ -6,8 +6,10 @@ import {
   VolumeX, 
   Maximize, 
   Minimize, 
-  RotateCcw
+  RotateCcw,
+  Loader2
 } from 'lucide-react';
+import { fetchAndAssembleChunkedVideo } from '../utils/mediaStorage';
 
 interface StreetVideoPlayerProps {
   src: string;
@@ -17,6 +19,8 @@ interface StreetVideoPlayerProps {
   loop?: boolean;
   aspectRatio?: string;
   onFullscreenRequest?: () => void;
+  dropId?: string;
+  isChunked?: boolean;
 }
 
 export const StreetVideoPlayer: React.FC<StreetVideoPlayerProps> = ({
@@ -26,7 +30,9 @@ export const StreetVideoPlayer: React.FC<StreetVideoPlayerProps> = ({
   autoPlay = false,
   loop = false,
   aspectRatio,
-  onFullscreenRequest
+  onFullscreenRequest,
+  dropId,
+  isChunked
 }) => {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -40,7 +46,44 @@ export const StreetVideoPlayer: React.FC<StreetVideoPlayerProps> = ({
   const [showControls, setShowControls] = useState<boolean>(true);
   const [isFullscreen, setIsFullscreen] = useState<boolean>(false);
   const [showCenterFeedback, setShowCenterFeedback] = useState<boolean>(false);
-  const [videoRatio, setVideoRatio] = useState<number | null>(null);
+
+  // State for resolved video src (handles chunked videos)
+  const [resolvedSrc, setResolvedSrc] = useState<string>(src);
+  const [isLoadingChunks, setIsLoadingChunks] = useState<boolean>(false);
+  const [chunkLoadError, setChunkLoadError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let isMounted = true;
+    if ((isChunked || src === 'chunked') && dropId) {
+      setIsLoadingChunks(true);
+      setChunkLoadError(null);
+      fetchAndAssembleChunkedVideo(dropId)
+        .then((blobUrl) => {
+          if (isMounted) {
+            setResolvedSrc(blobUrl);
+            setIsLoadingChunks(false);
+          }
+        })
+        .catch((err) => {
+          if (isMounted) {
+            console.error('Erro ao montar fragmentos do vídeo:', err);
+            setChunkLoadError('Falha ao carregar fragmentos do vídeo.');
+            setIsLoadingChunks(false);
+          }
+        });
+    } else {
+      setResolvedSrc(src);
+      setIsLoadingChunks(false);
+    }
+
+    return () => {
+      isMounted = false;
+    };
+  }, [src, isChunked, dropId]);
+
+  // Dynamic aspect ratio detection for adaptive box
+  const [videoAspect, setVideoAspect] = useState<number | null>(null);
+  const [formatTag, setFormatTag] = useState<string>('NATIVO');
 
   // Format seconds to mm:ss
   const formatTime = (seconds: number) => {
@@ -76,24 +119,28 @@ export const StreetVideoPlayer: React.FC<StreetVideoPlayerProps> = ({
     }
   };
 
+  // Video loaded metadata: detect exact width & height and adapt container box
   const handleLoadedMetadata = () => {
-    if (videoRef.current) {
-      setDuration(videoRef.current.duration);
-      const w = videoRef.current.videoWidth;
-      const h = videoRef.current.videoHeight;
-      if (w > 0 && h > 0) {
-        setVideoRatio(w / h);
+    if (!videoRef.current) return;
+    setDuration(videoRef.current.duration);
+
+    const vw = videoRef.current.videoWidth;
+    const vh = videoRef.current.videoHeight;
+    if (vw && vh) {
+      const ratio = vw / vh;
+      setVideoAspect(ratio);
+
+      if (vh > vw * 1.25) {
+        setFormatTag('VERTICAL 9:16');
+      } else if (vw > vh * 1.35) {
+        setFormatTag('WIDESCREEN 16:9');
+      } else if (Math.abs(vw - vh) < 30) {
+        setFormatTag('QUADRADO 1:1');
+      } else {
+        setFormatTag('4:3');
       }
     }
   };
-
-  // Immediate detection if video is already cached or loaded
-  useEffect(() => {
-    if (videoRef.current && videoRef.current.videoWidth > 0 && videoRef.current.videoHeight > 0) {
-      setVideoRatio(videoRef.current.videoWidth / videoRef.current.videoHeight);
-      setDuration(videoRef.current.duration);
-    }
-  }, [src]);
 
   const handleSeek = (e: React.ChangeEvent<HTMLInputElement>) => {
     const targetTime = parseFloat(e.target.value);
@@ -136,7 +183,6 @@ export const StreetVideoPlayer: React.FC<StreetVideoPlayerProps> = ({
       containerRef.current.requestFullscreen().then(() => {
         setIsFullscreen(true);
       }).catch(() => {
-        // Fallback to video native fullscreen for iOS safari
         if (videoRef.current && (videoRef.current as any).webkitEnterFullscreen) {
           (videoRef.current as any).webkitEnterFullscreen();
         }
@@ -156,7 +202,6 @@ export const StreetVideoPlayer: React.FC<StreetVideoPlayerProps> = ({
     return () => document.removeEventListener('fullscreenchange', handleFullscreenChange);
   }, []);
 
-  // Controls auto-hide logic
   const handleUserActivity = () => {
     setShowControls(true);
     if (hideControlsTimerRef.current) {
@@ -178,6 +223,8 @@ export const StreetVideoPlayer: React.FC<StreetVideoPlayerProps> = ({
   }, []);
 
   const progressPct = duration > 0 ? (currentTime / duration) * 100 : 0;
+  const resolvedAspect = aspectRatio || (videoAspect ? `${videoAspect}` : undefined);
+  const hasExplicitHeight = className?.includes('h-') || className?.includes('max-h-');
 
   return (
     <div
@@ -185,16 +232,17 @@ export const StreetVideoPlayer: React.FC<StreetVideoPlayerProps> = ({
       onMouseMove={handleUserActivity}
       onTouchStart={handleUserActivity}
       onMouseLeave={() => isPlaying && setShowControls(false)}
-      className={`relative group bg-black overflow-hidden select-none border border-bunker w-full mx-auto flex items-center justify-center ${className}`}
+      className={`relative group bg-black overflow-hidden select-none flex items-center justify-center w-full max-w-full transition-all duration-200 ${className}`}
       style={{
-        aspectRatio: videoRatio ? `${videoRatio}` : aspectRatio ? aspectRatio : '16/9',
-        maxHeight: 'min(75vh, 680px)'
+        aspectRatio: hasExplicitHeight ? undefined : resolvedAspect,
+        maxHeight: hasExplicitHeight ? undefined : 'min(65vh, 520px)',
+        contain: 'paint'
       }}
     >
-      {/* Video Element */}
+      {/* Video Element - object-contain ensures 100% of the video is visible without cropping or overflowing */}
       <video
         ref={videoRef}
-        src={src}
+        src={resolvedSrc}
         poster={poster}
         playsInline
         loop={loop}
@@ -206,29 +254,69 @@ export const StreetVideoPlayer: React.FC<StreetVideoPlayerProps> = ({
           setShowControls(true);
         }}
         onClick={handlePlayPause}
-        className="w-full h-full object-contain cursor-pointer block mx-auto bg-black"
+        className="max-w-full max-h-full w-auto h-auto object-contain cursor-pointer block mx-auto"
+        style={{
+          maxHeight: hasExplicitHeight ? '100%' : 'min(65vh, 520px)'
+        }}
       />
 
-      {/* Street Grain / Scanline Overlay (Subtle vibe) */}
+      {/* Loading overlay for chunked video assembly */}
+      {isLoadingChunks && (
+        <div className="absolute inset-0 bg-asphalt/90 backdrop-blur-xs flex flex-col items-center justify-center z-30 p-4 text-center">
+          <Loader2 className="w-8 h-8 text-acid animate-spin mb-2" />
+          <p className="font-mono text-xs text-acid font-bold tracking-wider">CARREGANDO VÍDEO DO SQUAD...</p>
+          <p className="font-mono text-[9px] text-stencil mt-1">Montando blocos de alta definição</p>
+        </div>
+      )}
+
+      {/* Error state if chunks failed */}
+      {chunkLoadError && !isLoadingChunks && (
+        <div className="absolute inset-0 bg-asphalt/90 flex flex-col items-center justify-center z-30 p-4 text-center">
+          <p className="font-mono text-xs text-red-400 font-bold mb-2">{chunkLoadError}</p>
+          <button
+            type="button"
+            onClick={() => {
+              if (dropId) {
+                setIsLoadingChunks(true);
+                setChunkLoadError(null);
+                fetchAndAssembleChunkedVideo(dropId)
+                  .then((blobUrl) => {
+                    setResolvedSrc(blobUrl);
+                    setIsLoadingChunks(false);
+                  })
+                  .catch(() => {
+                    setChunkLoadError('Falha ao carregar fragmentos do vídeo.');
+                    setIsLoadingChunks(false);
+                  });
+              }
+            }}
+            className="bg-bunker border border-acid text-acid px-3 py-1 font-mono text-[10px] rounded-xs cursor-pointer hover:bg-acid hover:text-asphalt"
+          >
+            TENTAR NOVAMENTE
+          </button>
+        </div>
+      )}
+
+      {/* Street Grain / Scanline Overlay */}
       <div 
-        className="absolute inset-0 pointer-events-none opacity-20 bg-linear-to-b from-transparent via-black/10 to-transparent"
+        className="absolute inset-0 pointer-events-none opacity-15 bg-linear-to-b from-transparent via-black/10 to-transparent"
         style={{ backgroundSize: '100% 4px' }}
       ></div>
 
-      {/* Top Banner: VHS REC + Squad Tag */}
+      {/* Top Banner: VHS REC + Format Badge + Squad Tag */}
       <div 
-        className={`absolute top-0 inset-x-0 p-2.5 flex items-center justify-between z-20 pointer-events-none transition-opacity duration-200 ${
+        className={`absolute top-0 inset-x-0 p-2 sm:p-2.5 flex items-center justify-between z-20 pointer-events-none transition-opacity duration-200 ${
           showControls || !isPlaying ? 'opacity-100' : 'opacity-0'
         }`}
       >
-        <div className="flex items-center gap-1.5 bg-asphalt/85 border border-bunker px-2 py-0.5 rounded-xs">
+        <div className="flex items-center gap-1.5 bg-asphalt/90 backdrop-blur-xs border border-bunker px-2 py-0.5 rounded-xs">
           <span className={`w-2 h-2 rounded-full ${isPlaying ? 'bg-red-500 animate-pulse' : 'bg-neutral-500'}`}></span>
           <span className="font-mono text-[9px] text-sprayCyan font-bold tracking-widest uppercase">
-            REC ● VHS-047
+            REC ● {formatTag}
           </span>
         </div>
 
-        <div className="bg-asphalt/85 border border-bunker px-2 py-0.5 rounded-xs">
+        <div className="bg-asphalt/90 backdrop-blur-xs border border-bunker px-2 py-0.5 rounded-xs">
           <span className="font-mono text-[9px] text-acid font-bold tracking-widest uppercase">
             † TMJ †
           </span>
@@ -239,13 +327,13 @@ export const StreetVideoPlayer: React.FC<StreetVideoPlayerProps> = ({
       {(!isPlaying || showCenterFeedback) && (
         <div 
           onClick={handlePlayPause}
-          className="absolute inset-0 flex items-center justify-center z-15 bg-asphalt/30 cursor-pointer transition-opacity"
+          className="absolute inset-0 flex items-center justify-center z-15 bg-black/25 cursor-pointer transition-opacity"
         >
-          <div className="w-14 h-14 sm:w-16 sm:h-16 rounded-sm bg-acid text-asphalt flex items-center justify-center shadow-[4px_4px_0px_var(--color-urbanOrange)] active:scale-95 transition-transform">
+          <div className="w-13 h-13 sm:w-16 sm:h-16 rounded-sm bg-acid text-asphalt flex items-center justify-center shadow-[4px_4px_0px_var(--color-urbanOrange)] active:scale-95 transition-transform">
             {isPlaying ? (
-              <Pause className="w-7 h-7 sm:w-8 sm:h-8 fill-asphalt" />
+              <Pause className="w-6 h-6 sm:w-8 sm:h-8 fill-asphalt" />
             ) : (
-              <Play className="w-7 h-7 sm:w-8 sm:h-8 fill-asphalt ml-1" />
+              <Play className="w-6 h-6 sm:w-8 sm:h-8 fill-asphalt ml-1" />
             )}
           </div>
         </div>
@@ -253,7 +341,7 @@ export const StreetVideoPlayer: React.FC<StreetVideoPlayerProps> = ({
 
       {/* Street Video Bottom Control Bar */}
       <div
-        className={`absolute bottom-0 inset-x-0 bg-gradient-to-t from-asphalt via-asphalt/90 to-transparent px-3 pt-6 pb-2.5 z-20 transition-all duration-200 ${
+        className={`absolute bottom-0 inset-x-0 bg-gradient-to-t from-black via-black/85 to-transparent px-3 pt-6 pb-2.5 z-20 transition-all duration-200 ${
           showControls || !isPlaying ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-2 pointer-events-none'
         }`}
       >

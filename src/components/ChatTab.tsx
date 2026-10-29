@@ -11,6 +11,7 @@ import {
   Pause, 
   Volume2
 } from 'lucide-react';
+import { uploadFileToCloudStorage } from '../utils/mediaStorage';
 
 interface ChatTabProps {
   messages: ChatMessage[];
@@ -27,6 +28,7 @@ export const ChatTab: React.FC<ChatTabProps> = ({
   const [isRecording, setIsRecording] = useState(false);
   const [recSeconds, setRecSeconds] = useState(0);
   const [recordedAudioUrl, setRecordedAudioUrl] = useState<string | null>(null);
+  const [recordedAudioBlob, setRecordedAudioBlob] = useState<Blob | null>(null);
   const [playingMessageAudioId, setPlayingMessageAudioId] = useState<string | null>(null);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -57,17 +59,16 @@ export const ChatTab: React.FC<ChatTabProps> = ({
 
       recorder.onstop = () => {
         const blob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
-        const reader = new FileReader();
-        reader.onloadend = () => {
-          setRecordedAudioUrl(reader.result as string);
-        };
-        reader.readAsDataURL(blob);
+        const localPreview = URL.createObjectURL(blob);
+        setRecordedAudioBlob(blob);
+        setRecordedAudioUrl(localPreview);
       };
 
       recorder.start();
       setIsRecording(true);
       setRecSeconds(0);
       setRecordedAudioUrl(null);
+      setRecordedAudioBlob(null);
 
       timerIntervalRef.current = window.setInterval(() => {
         setRecSeconds((prev) => prev + 1);
@@ -92,34 +93,45 @@ export const ChatTab: React.FC<ChatTabProps> = ({
   const discardRecording = () => {
     stopRecording();
     setRecordedAudioUrl(null);
+    setRecordedAudioBlob(null);
     setRecSeconds(0);
   };
 
-  const sendRecordedAudio = () => {
-    if (!recordedAudioUrl) return;
-    onSendMessage(`🎤 Áudio (${formatTime(recSeconds)})`, {
-      isAudio: true,
-      audioUrl: recordedAudioUrl,
-      audioDuration: recSeconds
-    });
-    setRecordedAudioUrl(null);
-    setRecSeconds(0);
+  const sendRecordedAudio = async () => {
+    if (!recordedAudioBlob) return;
+    const blobToSend = recordedAudioBlob;
+    const duration = recSeconds;
+    discardRecording();
+
+    try {
+      const downloadUrl = await uploadFileToCloudStorage(blobToSend, 'tmj_chat_media');
+      onSendMessage(`🎤 Áudio (${formatTime(duration)})`, {
+        isAudio: true,
+        audioUrl: downloadUrl,
+        audioDuration: duration
+      });
+    } catch (err) {
+      console.error('Erro ao enviar áudio para Cloud Storage:', err);
+      alert('Erro ao enviar áudio para o Cloud Storage.');
+    }
   };
 
-  const handleFileAttachment = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileAttachment = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
+    e.target.value = '';
 
     const isVideo = file.type.startsWith('video');
-    const reader = new FileReader();
-    reader.onload = () => {
+    try {
+      const downloadUrl = await uploadFileToCloudStorage(file, 'tmj_chat_media');
       onSendMessage(isVideo ? '📹 Vídeo enviado' : '📷 Foto enviada', {
-        mediaUrl: reader.result as string,
+        mediaUrl: downloadUrl,
         mediaType: isVideo ? 'video' : 'photo'
       });
-    };
-    reader.readAsDataURL(file);
-    e.target.value = '';
+    } catch (err) {
+      console.error('Erro ao enviar arquivo para Cloud Storage:', err);
+      alert('Erro ao enviar anexo para o Cloud Storage.');
+    }
   };
 
   const formatTime = (seconds: number) => {
@@ -188,7 +200,7 @@ export const ChatTab: React.FC<ChatTabProps> = ({
                     {msg.mediaType === 'video' ? (
                       <video src={msg.mediaUrl} controls className="max-h-56 w-full object-cover" />
                     ) : (
-                      <img src={msg.mediaUrl} alt="Chat media" className="max-h-56 w-full object-cover" />
+                      <img src={msg.mediaUrl} alt="Chat media" className="max-h-56 w-auto max-w-full object-contain mx-auto block" />
                     )}
                   </div>
                 )}

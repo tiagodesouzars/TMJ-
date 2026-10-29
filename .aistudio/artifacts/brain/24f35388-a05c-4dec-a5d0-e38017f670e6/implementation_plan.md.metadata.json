@@ -1,0 +1,6 @@
+{
+  "summary":  "Plano detalhado de migração do armazenamento de mídia do Vault para o Supabase Storage (bucket 'tmj-media') com compressão otimizada no cliente (1600px, 85% qualidade), barra de progresso em tempo real com porcentagem e sincronização da URL pública no Firestore.",
+  "updatedAt":  "2026-10-29T13:09:18.922365734Z",
+  "requestFeedback":  true,
+  "userFacing":  true
+}

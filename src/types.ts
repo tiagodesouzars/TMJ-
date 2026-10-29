@@ -29,6 +29,7 @@ export interface VaultDrop {
   title: string;
   caption?: string;
   url: string;
+  midiaUrl?: string;
   authorId: string;
   authorName: string;
   authorHandle: string;
@@ -40,6 +41,8 @@ export interface VaultDrop {
   likes?: number;
   reactions?: Record<string, number>;
   reactedBy?: Record<string, string[]>;
+  isChunked?: boolean;
+  totalChunks?: number;
 }
 
 export interface ChatMessage {
@@ -55,6 +58,7 @@ export interface ChatMessage {
   audioUrl?: string | null;
   audioDuration?: number | null;
   mediaUrl?: string | null;
+  midiaUrl?: string | null;
   mediaType?: 'photo' | 'video' | 'image' | null;
   timestamp: string | number;
   createdAt?: number;

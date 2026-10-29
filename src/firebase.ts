@@ -7,6 +7,14 @@ const app = !getApps().length ? initializeApp(firebaseConfig) : getApps()[0];
 
 export const db = getFirestore(app, firebaseConfig.firestoreDatabaseId);
 export const auth = getAuth(app);
+export const appId = firebaseConfig.projectId || 'triotmj-3187e';
+
+// Auto-authenticate anonymously immediately on boot so Firestore rules are authenticated
+if (typeof window !== 'undefined') {
+  signInAnonymously(auth).catch((err) => {
+    console.warn('Aviso de autenticação anônima:', err);
+  });
+}
 
 export enum OperationType {
   CREATE = 'create',
