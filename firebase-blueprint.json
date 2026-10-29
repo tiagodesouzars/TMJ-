@@ -2,58 +2,55 @@
   "entities": {
     "Member": {
       "title": "Member",
-      "description": "Squad member profile (Tiago, Jorge, Marcus) for Trio TMJ",
+      "description": "Squad member profile (Tiago, Jorge, Marcus) for TMJ Vault & Chat",
       "type": "object",
       "properties": {
-        "id": { "type": "string", "description": "Member ID (t1, j2, m3)" },
+        "id": { "type": "string", "description": "Member ID" },
         "name": { "type": "string", "description": "Display name of the member" },
         "handle": { "type": "string", "description": "Username handle with @" },
-        "role": { "type": "string", "description": "Squad role / specialty tag" },
-        "color": { "type": "string", "description": "Streetwear theme color" },
-        "customAvatar": { "type": "string", "description": "Public download URL of avatar from Cloud Storage" },
-        "password": { "type": "string", "description": "PIN or access password" },
-        "updatedAt": { "type": "number", "description": "Last updated timestamp" }
+        "role": { "type": "string", "description": "Squad role / specialty" },
+        "color": { "type": "string", "description": "Streetwear theme hex color" },
+        "customAvatar": { "type": "string", "description": "Custom avatar URL or base64" },
+        "password": { "type": "string", "description": "PIN or access code" },
+        "email": { "type": "string", "description": "Member email" },
+        "updatedAt": { "type": "string", "description": "Last updated ISO timestamp" }
       },
       "required": ["id", "name", "handle", "role", "color"]
     },
     "VaultDrop": {
       "title": "VaultDrop",
-      "description": "Media drop item in the Trio TMJ Vault storing only the public Cloud Storage URL in midiaUrl",
+      "description": "Media drop item in the shared TMJ Vault (photo, video, audio beat)",
       "type": "object",
       "properties": {
         "id": { "type": "string", "description": "Unique drop ID" },
-        "type": { "type": "string", "enum": ["image", "video", "photo", "audio"], "description": "Media category" },
-        "midiaUrl": { "type": "string", "description": "Public download URL (getDownloadURL) from Cloud Storage for Firebase" },
-        "url": { "type": "string", "description": "Public download URL alias for backward compatibility" },
-        "caption": { "type": "string", "description": "Caption or description of the drop" },
+        "type": { "type": "string", "enum": ["photo", "video", "audio", "image"], "description": "Media category" },
+        "title": { "type": "string", "description": "Title or headline of the drop" },
+        "caption": { "type": "string", "description": "Description or fit details" },
+        "url": { "type": "string", "description": "Media URL or embedded source" },
         "authorId": { "type": "string", "description": "ID of member who posted" },
         "authorName": { "type": "string", "description": "Name of author" },
-        "authorColor": { "type": "string", "description": "Theme color of author" },
-        "timestamp": { "type": "number", "description": "Creation epoch timestamp" },
-        "comments": { "type": "array", "description": "List of comments on the drop" },
+        "authorHandle": { "type": "string", "description": "Handle of author" },
+        "tag": { "type": "string", "description": "Tag category e.g. Fit Check, Sneakers, Rolê, Beat" },
+        "createdAt": { "type": "string", "description": "Creation timestamp" },
         "reactions": { "type": "object", "description": "Map of fixed emojis to reaction counts" },
-        "reactedBy": { "type": "object", "description": "Map of fixed emojis to reactor IDs" },
-        "deviceReactions": { "type": "object", "description": "Map of deviceId/memberId to selected emoji (1 reaction per device)" }
+        "reactedBy": { "type": "object", "description": "Map of fixed emojis to user/viewer identifiers" }
       },
-      "required": ["id", "type", "midiaUrl", "authorId", "authorName", "timestamp"]
+      "required": ["id", "type", "title", "url", "authorId", "authorName", "createdAt"]
     },
     "ChatMessage": {
       "title": "ChatMessage",
-      "description": "Real-time Resenha chat message or media/voice note storing only Cloud Storage public URLs",
+      "description": "Chat message or voice note exchanged between the trio",
       "type": "object",
       "properties": {
         "id": { "type": "string", "description": "Unique message ID" },
         "authorId": { "type": "string", "description": "Sender member ID" },
         "authorName": { "type": "string", "description": "Sender display name" },
-        "authorColor": { "type": "string", "description": "Sender theme color" },
-        "authorAvatar": { "type": "string", "description": "Sender avatar URL" },
+        "authorHandle": { "type": "string", "description": "Sender @ handle" },
         "text": { "type": "string", "description": "Text message content" },
-        "midiaUrl": { "type": "string", "description": "Public download URL from Cloud Storage for media or audio" },
-        "mediaUrl": { "type": "string", "description": "Public download URL for attached photo/GIF/video" },
-        "mediaType": { "type": "string", "enum": ["image", "video"], "description": "Attached media type" },
-        "audioUrl": { "type": "string", "description": "Public download URL for voice recording" },
-        "duration": { "type": "number", "description": "Audio duration in seconds" },
-        "timestamp": { "type": "number", "description": "Message epoch timestamp" }
+        "isAudio": { "type": "boolean", "description": "Whether message is a voice recording" },
+        "audioUrl": { "type": "string", "description": "Audio data URL if voice note" },
+        "audioDuration": { "type": "number", "description": "Duration in seconds" },
+        "timestamp": { "type": "string", "description": "Message timestamp" }
       },
       "required": ["id", "authorId", "authorName", "timestamp"]
     }
@@ -61,15 +58,15 @@
   "firestore": {
     "/tmj_members/{memberId}": {
       "schema": { "$ref": "#/entities/Member" },
-      "description": "Trio TMJ members list with customizable tags, passwords, and Cloud Storage avatar URLs"
+      "description": "Squad members list with customizable profiles and roles"
     },
     "/tmj_vault/{dropId}": {
       "schema": { "$ref": "#/entities/VaultDrop" },
-      "description": "Shared Trio TMJ media drops storing public Cloud Storage URLs in midiaUrl"
+      "description": "Shared streetwear vault media drops (photos, videos, audio beats)"
     },
     "/tmj_chat/{messageId}": {
       "schema": { "$ref": "#/entities/ChatMessage" },
-      "description": "Real-time Resenha chat feed between the trio with Cloud Storage media/audio URLs"
+      "description": "Real-time chat feed and voice recordings between the trio"
     }
   }
 }

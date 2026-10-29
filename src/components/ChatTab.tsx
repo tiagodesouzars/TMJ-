@@ -11,7 +11,6 @@ import {
   Pause, 
   Volume2
 } from 'lucide-react';
-import { uploadFileToCloudStorage } from '../utils/mediaStorage';
 
 interface ChatTabProps {
   messages: ChatMessage[];
@@ -28,7 +27,6 @@ export const ChatTab: React.FC<ChatTabProps> = ({
   const [isRecording, setIsRecording] = useState(false);
   const [recSeconds, setRecSeconds] = useState(0);
   const [recordedAudioUrl, setRecordedAudioUrl] = useState<string | null>(null);
-  const [recordedAudioBlob, setRecordedAudioBlob] = useState<Blob | null>(null);
   const [playingMessageAudioId, setPlayingMessageAudioId] = useState<string | null>(null);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -59,16 +57,17 @@ export const ChatTab: React.FC<ChatTabProps> = ({
 
       recorder.onstop = () => {
         const blob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
-        const localPreview = URL.createObjectURL(blob);
-        setRecordedAudioBlob(blob);
-        setRecordedAudioUrl(localPreview);
+        const reader = new FileReader();
+        reader.onloadend = () => {
+          setRecordedAudioUrl(reader.result as string);
+        };
+        reader.readAsDataURL(blob);
       };
 
       recorder.start();
       setIsRecording(true);
       setRecSeconds(0);
       setRecordedAudioUrl(null);
-      setRecordedAudioBlob(null);
 
       timerIntervalRef.current = window.setInterval(() => {
         setRecSeconds((prev) => prev + 1);
@@ -93,45 +92,34 @@ export const ChatTab: React.FC<ChatTabProps> = ({
   const discardRecording = () => {
     stopRecording();
     setRecordedAudioUrl(null);
-    setRecordedAudioBlob(null);
     setRecSeconds(0);
   };
 
-  const sendRecordedAudio = async () => {
-    if (!recordedAudioBlob) return;
-    const blobToSend = recordedAudioBlob;
-    const duration = recSeconds;
-    discardRecording();
-
-    try {
-      const downloadUrl = await uploadFileToCloudStorage(blobToSend, 'tmj_chat_media');
-      onSendMessage(`🎤 Áudio (${formatTime(duration)})`, {
-        isAudio: true,
-        audioUrl: downloadUrl,
-        audioDuration: duration
-      });
-    } catch (err) {
-      console.error('Erro ao enviar áudio para Cloud Storage:', err);
-      alert('Erro ao enviar áudio para o Cloud Storage.');
-    }
+  const sendRecordedAudio = () => {
+    if (!recordedAudioUrl) return;
+    onSendMessage(`🎤 Áudio (${formatTime(recSeconds)})`, {
+      isAudio: true,
+      audioUrl: recordedAudioUrl,
+      audioDuration: recSeconds
+    });
+    setRecordedAudioUrl(null);
+    setRecSeconds(0);
   };
 
-  const handleFileAttachment = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileAttachment = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    e.target.value = '';
 
     const isVideo = file.type.startsWith('video');
-    try {
-      const downloadUrl = await uploadFileToCloudStorage(file, 'tmj_chat_media');
+    const reader = new FileReader();
+    reader.onload = () => {
       onSendMessage(isVideo ? '📹 Vídeo enviado' : '📷 Foto enviada', {
-        mediaUrl: downloadUrl,
+        mediaUrl: reader.result as string,
         mediaType: isVideo ? 'video' : 'photo'
       });
-    } catch (err) {
-      console.error('Erro ao enviar arquivo para Cloud Storage:', err);
-      alert('Erro ao enviar anexo para o Cloud Storage.');
-    }
+    };
+    reader.readAsDataURL(file);
+    e.target.value = '';
   };
 
   const formatTime = (seconds: number) => {

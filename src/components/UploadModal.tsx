@@ -1,8 +1,7 @@
 import React, { useState } from 'react';
 import { SquadMember } from '../types';
 import { DROP_TAGS } from '../constants/initialData';
-import { X, Upload, Image, Video, Music, Loader2 } from 'lucide-react';
-import { uploadFileToCloudStorage } from '../utils/mediaStorage';
+import { X, Upload, Image, Video, Music } from 'lucide-react';
 
 interface UploadModalProps {
   activeMember: SquadMember;
@@ -13,7 +12,6 @@ interface UploadModalProps {
     caption: string;
     tag: string;
     url: string;
-    midiaUrl?: string;
   }) => void;
 }
 
@@ -27,15 +25,11 @@ export const UploadModal: React.FC<UploadModalProps> = ({
   const [caption, setCaption] = useState('');
   const [selectedTag, setSelectedTag] = useState(DROP_TAGS[0]);
   const [mediaUrl, setMediaUrl] = useState('');
-  const [selectedFile, setSelectedFile] = useState<File | null>(null);
-  const [isUploading, setIsUploading] = useState(false);
-  const [uploadStatus, setUploadStatus] = useState('');
   const [previewError, setPreviewError] = useState('');
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    setSelectedFile(file);
 
     if (file.type.startsWith('video')) {
       setMediaType('video');
@@ -45,14 +39,15 @@ export const UploadModal: React.FC<UploadModalProps> = ({
       setMediaType('photo');
     }
 
-    // Local object URL for instant preview without Base64 strings
-    const localPreview = URL.createObjectURL(file);
-    setMediaUrl(localPreview);
+    const reader = new FileReader();
+    reader.onload = () => {
+      setMediaUrl(reader.result as string);
+    };
+    reader.readAsDataURL(file);
   };
 
   const handlePresetSelect = (presetType: 'photo' | 'video' | 'audio') => {
     setMediaType(presetType);
-    setSelectedFile(null);
     if (presetType === 'photo') {
       setMediaUrl('https://images.unsplash.com/photo-1515886657613-9f3515b0c78f?auto=format&fit=crop&q=80&w=800');
       setTitle('NEW LOOK // CARGO & HOODIE');
@@ -62,52 +57,32 @@ export const UploadModal: React.FC<UploadModalProps> = ({
       setTitle('STREET SKATE SESSION');
       setSelectedTag('#Rolê 🛹');
     } else {
-      setMediaUrl('https://cdn.freesound.org/previews/563/563768_11861866-lq.mp3');
+      setMediaUrl('data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQAAAAA=');
       setTitle('BEAT 808 // TRAP BOOM BAP');
       setSelectedTag('#Beat/Áudio 🔊');
     }
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!title.trim()) {
       setPreviewError('Digite um título para o drop!');
       return;
     }
-    if (!mediaUrl && !selectedFile) {
+    if (!mediaUrl) {
       setPreviewError('Selecione uma foto, vídeo ou áudio!');
       return;
     }
 
-    setIsUploading(true);
-    setUploadStatus('Fazendo upload direto para o Cloud Storage...');
+    onUploadDrop({
+      type: mediaType,
+      title: title.trim(),
+      caption: caption.trim(),
+      tag: selectedTag,
+      url: mediaUrl
+    });
 
-    try {
-      let finalDownloadUrl = mediaUrl;
-
-      // Upload file directly to Cloud Storage for Firebase if a file was selected
-      if (selectedFile) {
-        setUploadStatus('Enviando arquivo para o Cloud Storage...');
-        finalDownloadUrl = await uploadFileToCloudStorage(selectedFile, 'tmj_vault');
-        setUploadStatus('URL pública gerada com sucesso!');
-      }
-
-      onUploadDrop({
-        type: mediaType,
-        title: title.trim(),
-        caption: caption.trim(),
-        tag: selectedTag,
-        url: finalDownloadUrl,
-        midiaUrl: finalDownloadUrl
-      });
-
-      setIsUploading(false);
-      onClose();
-    } catch (err: any) {
-      console.error('Erro no upload para Cloud Storage:', err);
-      setIsUploading(false);
-      setPreviewError('Erro no upload para Cloud Storage: ' + (err?.message || 'Tente novamente'));
-    }
+    onClose();
   };
 
   return (
@@ -297,35 +272,19 @@ export const UploadModal: React.FC<UploadModalProps> = ({
           )}
 
           {/* Actions */}
-          {isUploading && (
-            <div className="flex items-center gap-2 p-2 bg-asphalt rounded-sm border border-acid/50 text-acid font-mono text-xs">
-              <Loader2 className="w-4 h-4 animate-spin shrink-0" />
-              <span>{uploadStatus || 'Enviando mídia para o Cloud Storage...'}</span>
-            </div>
-          )}
-
           <div className="flex gap-2 pt-1">
             <button
               type="button"
-              disabled={isUploading}
               onClick={onClose}
-              className="flex-1 bg-concrete border border-neutral-700 text-stencil py-2.5 rounded-sm font-mono text-xs hover:text-white cursor-pointer disabled:opacity-50"
+              className="flex-1 bg-concrete border border-neutral-700 text-stencil py-2.5 rounded-sm font-mono text-xs hover:text-white cursor-pointer"
             >
               CANCELAR
             </button>
             <button
               type="submit"
-              disabled={isUploading}
-              className="flex-1 bg-acid text-black font-display text-sm tracking-wider py-2.5 rounded-sm border border-black shadow-[3px_3px_0px_#ff5500] active:translate-y-0.5 cursor-pointer font-bold disabled:opacity-50 flex items-center justify-center gap-1.5"
+              className="flex-1 bg-acid text-black font-display text-sm tracking-wider py-2.5 rounded-sm border border-black shadow-[3px_3px_0px_#ff5500] active:translate-y-0.5 cursor-pointer font-bold"
             >
-              {isUploading ? (
-                <>
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                  <span>ENVIANDO...</span>
-                </>
-              ) : (
-                <span>PUBLICAR DROP</span>
-              )}
+              PUBLICAR DROP
             </button>
           </div>
         </form>

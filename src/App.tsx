@@ -3,8 +3,6 @@ import { db, auth, handleFirestoreError, OperationType } from './firebase';
 import { 
   collection, 
   doc, 
-  getDoc,
-  getDocs,
   setDoc, 
   deleteDoc, 
   onSnapshot 
@@ -31,49 +29,13 @@ import {
   Download,
   Eye,
   Image as ImageIcon,
-  Video as VideoIcon,
-  Loader2,
-  Copy,
-  Check,
-  ExternalLink,
-  HelpCircle
+  Video as VideoIcon
 } from 'lucide-react';
 import { StreetVideoPlayer } from './components/StreetVideoPlayer';
 import { MediaReactions, FIXED_REACTION_EMOJIS } from './components/MediaReactions';
-import { 
-  uploadVaultMedia, 
-  uploadChatMedia, 
-  uploadAvatarMedia, 
-  uploadFileToCloudStorage,
-  uploadMediaWithFallback 
-} from './utils/mediaStorage';
 
 const TMJ_LOGO_URL = '/assets/aistudio/file_00000000547c820ea5b46970c320d81b_15046822.png';
 const TMJ_BANNER_URL = '/assets/aistudio/download_ce7e2314.jpg';
-
-// Helper to get or generate persistent device ID for visitors/viewers
-export const getViewerDeviceId = (): string => {
-  const DEVICE_STORAGE_KEY = 'tmj_viewer_device_id_v2';
-  try {
-    let deviceId = localStorage.getItem(DEVICE_STORAGE_KEY);
-    if (!deviceId) {
-      deviceId = 'dev_' + Date.now().toString(36) + '_' + Math.random().toString(36).substring(2, 10);
-      localStorage.setItem(DEVICE_STORAGE_KEY, deviceId);
-    }
-    return deviceId;
-  } catch {
-    // Fallback if localStorage is disabled or in private window:
-    // Memory session variable that resets on F5/refresh as requested by user
-    if (typeof window !== 'undefined') {
-      const win = window as any;
-      if (!win.__tmj_session_device_id) {
-        win.__tmj_session_device_id = 'sess_' + Date.now().toString(36) + '_' + Math.random().toString(36).substring(2, 10);
-      }
-      return win.__tmj_session_device_id;
-    }
-    return 'dev_guest';
-  }
-};
 
 export interface SquadMember {
   id: string;
@@ -100,15 +62,11 @@ export interface VaultItem {
   authorColor: string;
   type: 'image' | 'video';
   url: string;
-  midiaUrl?: string;
   caption?: string;
   timestamp: number;
   comments?: VaultComment[];
   reactions?: Record<string, number>;
   reactedBy?: Record<string, string[]>;
-  deviceReactions?: Record<string, string>;
-  isChunked?: boolean;
-  totalChunks?: number;
 }
 
 export interface ChatMessage {
@@ -120,7 +78,6 @@ export interface ChatMessage {
   authorAvatar?: string | null;
   text?: string;
   mediaUrl?: string;
-  midiaUrl?: string;
   mediaType?: 'image' | 'video';
   audioUrl?: string;
   duration?: number;
@@ -169,10 +126,7 @@ export default function App() {
 
   // Upload Form State
   const [pendingUploadData, setPendingUploadData] = useState<{ type: 'image' | 'video'; url: string } | null>(null);
-  const [selectedUploadFile, setSelectedUploadFile] = useState<File | null>(null);
   const [uploadCaption, setUploadCaption] = useState('');
-  const [isUploadingMedia, setIsUploadingMedia] = useState<boolean>(false);
-  const [uploadProgressStatus, setUploadProgressStatus] = useState<string>('');
 
   // Squad Edit Form State
   const [editRole, setEditRole] = useState('');
@@ -207,9 +161,8 @@ export default function App() {
 
   const appId = 'triotmj-3187e';
 
-  // Helper to persist a member to Firestore (saves to both root and artifacts path, stripping any legacy Base64)
+  // Helper to persist a member to Firestore
   const persistMemberToFirestore = async (member: SquadMember) => {
-    const isBase64Avatar = member.customAvatar?.startsWith('data:');
     const cleanMember: SquadMember = {
       id: member.id,
       name: member.name,
@@ -217,71 +170,74 @@ export default function App() {
       role: member.role || '',
       color: member.color,
       password: member.password ?? null,
-      customAvatar: isBase64Avatar ? null : (member.customAvatar ?? null)
+      customAvatar: member.customAvatar ?? null
     };
     try {
-      await setDoc(doc(db, 'tmj_members', member.id), cleanMember, { merge: true }).catch(() => null);
       const memberRef = doc(db, 'artifacts', appId, 'public', 'data', 'tmj_members', member.id);
-      await setDoc(memberRef, cleanMember, { merge: true }).catch(() => null);
+      await setDoc(memberRef, cleanMember, { merge: true });
     } catch (err) {
-      handleFirestoreError(err, OperationType.WRITE, `tmj_members/${member.id}`);
+      handleFirestoreError(err, OperationType.WRITE, `artifacts/${appId}/public/data/tmj_members/${member.id}`);
     }
   };
 
-  // Seeding guard refs to prevent infinite loop triggers
-  const isMembersSeededRef = useRef(false);
-  const isMigrationRunningRef = useRef(false);
+  // 1. Initial Firestore Setup & Real-time Listeners
+  useEffect(() => {
+    if (!auth.currentUser) {
+      signInAnonymously(auth).catch(() => null);
+    }
 
-  // Wipe all legacy Firestore data and rebuild Trio TMJ structure under the new terms (midiaUrl + Cloud Storage)
-  const purgeAndRebuildFirestoreNewTerms = async () => {
-    const collectionsToClear = [
-      collection(db, 'tmj_vault'),
-      collection(db, 'tmj_chat'),
-      collection(db, 'tmj_vault_chunks'),
-      collection(db, 'artifacts', appId, 'public', 'data', 'tmj_vault'),
-      collection(db, 'artifacts', appId, 'public', 'data', 'tmj_chat'),
-      collection(db, 'artifacts', appId, 'public', 'data', 'tmj_vault_chunks')
-    ];
-
-    for (const colRef of collectionsToClear) {
-      try {
-        const snap = await getDocs(colRef);
-        for (const d of snap.docs) {
-          await deleteDoc(d.ref).catch(() => null);
+    // Members sync
+    const membersColRef = collection(db, 'artifacts', appId, 'public', 'data', 'tmj_members');
+    const unsubMembers = onSnapshot(membersColRef, async (snap) => {
+      if (snap.empty) {
+        for (const m of DEFAULT_SQUAD) {
+          await persistMemberToFirestore(m);
         }
-      } catch {
-        // Ignore if collection does not exist
+      } else {
+        const loaded = snap.docs.map((d) => ({ ...d.data(), id: d.id } as SquadMember));
+        setSquadMembers((prev) => {
+          const updated = [...prev];
+          loaded.forEach((m) => {
+            const idx = updated.findIndex((x) => x.id === m.id);
+            if (idx !== -1) {
+              updated[idx] = { ...updated[idx], ...m };
+            } else {
+              updated.push(m);
+            }
+          });
+          return updated;
+        });
       }
-    }
+    }, (err) => {
+      handleFirestoreError(err, OperationType.LIST, 'tmj_members');
+    });
 
-    // Re-seed clean Trio TMJ members under the new terms
-    for (const m of DEFAULT_SQUAD) {
-      await persistMemberToFirestore(m);
-    }
-    setSquadMembers(DEFAULT_SQUAD);
-    setVaultItems([]);
+    // Vault sync
+    const vaultColRef = collection(db, 'artifacts', appId, 'public', 'data', 'tmj_vault');
+    const unsubVault = onSnapshot(vaultColRef, (snap) => {
+      const items = snap.docs.map((d) => ({ ...d.data(), docId: d.id } as VaultItem));
+      items.sort((a, b) => b.timestamp - a.timestamp);
+      setVaultItems(items);
+    }, (err) => {
+      handleFirestoreError(err, OperationType.LIST, 'tmj_vault');
+    });
 
-    // Welcome message in Resenha confirming new terms
-    const welcomeMsg: ChatMessage = {
-      id: 'msg_init_terms_v3',
-      authorId: 't1',
-      authorName: 'TIAGO',
-      authorColor: 'var(--color-acid)',
-      text: 'Banco Trio TMJ recriado do zero nos novos termos (Cloud Storage + midiaUrl)! 🔥',
-      timestamp: Date.now()
+    // Chat sync
+    const chatColRef = collection(db, 'artifacts', appId, 'public', 'data', 'tmj_chat');
+    const unsubChat = onSnapshot(chatColRef, (snap) => {
+      const msgs = snap.docs.map((d) => ({ ...d.data(), docId: d.id } as ChatMessage));
+      msgs.sort((a, b) => a.timestamp - b.timestamp);
+      setChatMessages(msgs);
+    }, (err) => {
+      handleFirestoreError(err, OperationType.LIST, 'tmj_chat');
+    });
+
+    return () => {
+      unsubMembers();
+      unsubVault();
+      unsubChat();
     };
-    await setDoc(doc(db, 'tmj_chat', welcomeMsg.id), welcomeMsg).catch(() => null);
-    await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'tmj_chat', welcomeMsg.id), welcomeMsg).catch(() => null);
-    setChatMessages([welcomeMsg]);
-
-    // Record migration completion in Firestore
-    await setDoc(doc(db, 'tmj_meta', 'terms_v3_clean'), {
-      completed: true,
-      version: 'v3_cloud_storage_midiaUrl',
-      projectId: appId,
-      updatedAt: Date.now()
-    }).catch(() => null);
-  };
+  }, []);
 
   // Dynamic visual viewport detection for mobile virtual keyboard
   useEffect(() => {
@@ -297,7 +253,7 @@ export default function App() {
         setVirtualKeyboardHeight(keyboardOffset);
       } else {
         setVirtualKeyboardHeight(0);
-        if (document.activeElement?.id !== 'chat-input') {
+        if ( document.activeElement?.id !== 'chat-input') {
           setIsChatInputFocused(false);
         }
       }
@@ -309,119 +265,6 @@ export default function App() {
     return () => {
       window.visualViewport?.removeEventListener('resize', handleVisualViewportResize);
       window.removeEventListener('resize', handleVisualViewportResize);
-    };
-  }, []);
-
-  // 1. Initial Firestore Setup, One-Time Legacy Wipe & Real-time Listeners (with loop guards)
-  useEffect(() => {
-    if (!auth.currentUser) {
-      signInAnonymously(auth).catch(() => null);
-    }
-
-    let unsubMembers: (() => void) | null = null;
-    let unsubVault: (() => void) | null = null;
-    let unsubChat: (() => void) | null = null;
-    let isCancelled = false;
-
-    const initFirestoreAndListeners = async () => {
-      // Check if one-time wipe & rebuild under new terms has been executed
-      if (!isMigrationRunningRef.current) {
-        isMigrationRunningRef.current = true;
-        try {
-          const metaSnap = await getDoc(doc(db, 'tmj_meta', 'terms_v3_clean'));
-          if (!metaSnap.exists()) {
-            await purgeAndRebuildFirestoreNewTerms();
-          }
-        } catch {
-          // Proceed to attach listeners even if offline
-        }
-      }
-
-      if (isCancelled) return;
-
-      // Members sync: listens to root tmj_members, auto-seeds clean Trio TMJ members if empty
-      const membersColRef = collection(db, 'tmj_members');
-      unsubMembers = onSnapshot(membersColRef, async (snap) => {
-        if (snap.empty) {
-          setSquadMembers(DEFAULT_SQUAD);
-          if (!isMembersSeededRef.current) {
-            isMembersSeededRef.current = true;
-            for (const m of DEFAULT_SQUAD) {
-              await persistMemberToFirestore(m);
-            }
-          }
-        } else {
-          isMembersSeededRef.current = true;
-          const loaded = snap.docs.map((d) => ({ ...d.data(), id: d.id } as SquadMember));
-          setSquadMembers((prev) => {
-            const updated = [...prev];
-            loaded.forEach((m) => {
-              const idx = updated.findIndex((x) => x.id === m.id);
-              if (idx !== -1) {
-                updated[idx] = { ...updated[idx], ...m };
-              } else {
-                updated.push(m);
-              }
-            });
-            return updated;
-          });
-        }
-      }, (err) => {
-        handleFirestoreError(err, OperationType.LIST, 'tmj_members');
-      });
-
-      // Vault sync: listens to root tmj_vault under new terms (midiaUrl)
-      const vaultColRef = collection(db, 'tmj_vault');
-      unsubVault = onSnapshot(vaultColRef, (snap) => {
-        if (snap.empty) {
-          setVaultItems([]);
-        } else {
-          const items = snap.docs.map((d) => {
-            const data = d.data();
-            const effectiveUrl = data.midiaUrl || data.url || '';
-            return {
-              ...data,
-              docId: d.id,
-              url: effectiveUrl,
-              midiaUrl: effectiveUrl
-            } as VaultItem;
-          });
-          items.sort((a, b) => b.timestamp - a.timestamp);
-          setVaultItems(items);
-        }
-      }, (err) => {
-        handleFirestoreError(err, OperationType.LIST, 'tmj_vault');
-      });
-
-      // Chat sync: listens to root tmj_chat under new terms (midiaUrl)
-      const chatColRef = collection(db, 'tmj_chat');
-      unsubChat = onSnapshot(chatColRef, (snap) => {
-        const msgs = snap.docs.map((d) => {
-          const data = d.data();
-          const effectiveMedia = data.midiaUrl || data.mediaUrl;
-          const effectiveAudio = data.audioUrl;
-          return {
-            ...data,
-            docId: d.id,
-            mediaUrl: effectiveMedia,
-            audioUrl: effectiveAudio,
-            midiaUrl: effectiveMedia || effectiveAudio
-          } as ChatMessage;
-        });
-        msgs.sort((a, b) => a.timestamp - b.timestamp);
-        setChatMessages(msgs);
-      }, (err) => {
-        handleFirestoreError(err, OperationType.LIST, 'tmj_chat');
-      });
-    };
-
-    initFirestoreAndListeners();
-
-    return () => {
-      isCancelled = true;
-      if (unsubMembers) unsubMembers();
-      if (unsubVault) unsubVault();
-      if (unsubChat) unsubChat();
     };
   }, []);
 
@@ -442,34 +285,76 @@ export default function App() {
     }
   }, [chatMessages.length, activeTab]);
 
-  // Keep activeMember and selectedLoginUser in sync with freshest squad state without infinite re-render loops
+
+  // Keep activeMember and selectedLoginUser in sync with freshest squad state
   useEffect(() => {
     if (activeMember && !isViewerMode) {
       const found = squadMembers.find((m) => m.id === activeMember.id);
-      if (found && (
-        found.name !== activeMember.name ||
-        found.role !== activeMember.role ||
-        found.color !== activeMember.color ||
-        found.password !== activeMember.password ||
-        found.customAvatar !== activeMember.customAvatar
-      )) {
-        setActiveMember(found);
-      }
+      if (found) setActiveMember(found);
     }
     if (selectedLoginUser) {
       const foundSelected = squadMembers.find((m) => m.id === selectedLoginUser.id);
-      if (foundSelected && (
-        foundSelected.name !== selectedLoginUser.name ||
-        foundSelected.role !== selectedLoginUser.role ||
-        foundSelected.color !== selectedLoginUser.color ||
-        foundSelected.password !== selectedLoginUser.password ||
-        foundSelected.customAvatar !== selectedLoginUser.customAvatar
-      )) {
-        setSelectedLoginUser(foundSelected);
-      }
+      if (foundSelected) setSelectedLoginUser(foundSelected);
     }
   }, [squadMembers, isViewerMode]);
 
+  // High-Quality Image & Video Processor (maximiza resolução mantendo dentro do limite de 1MB do documento)
+  const processMediaForBestQuality = (file: File, callback: (base64: string) => void) => {
+    // GIFs & Videos: read directly to preserve raw frames/video
+    if (file.type === 'image/gif' || file.type.startsWith('video/')) {
+      const reader = new FileReader();
+      reader.onload = (e) => callback(e.target?.result as string);
+      reader.readAsDataURL(file);
+      return;
+    }
+
+    // If image file is already under 650KB, keep 100% original binary resolution
+    if (file.size <= 650 * 1024) {
+      const reader = new FileReader();
+      reader.onload = (e) => callback(e.target?.result as string);
+      reader.readAsDataURL(file);
+      return;
+    }
+
+    // High-resolution scale with canvas preserving maximum detail
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        let width = img.width;
+        let height = img.height;
+        const maxDim = 1920; // Full HD 1080p+
+
+        if (width > height && width > maxDim) {
+          height = Math.round((height * maxDim) / width);
+          width = maxDim;
+        } else if (height > maxDim) {
+          width = Math.round((width * maxDim) / height);
+          height = maxDim;
+        }
+
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        if (ctx) {
+          ctx.imageSmoothingEnabled = true;
+          ctx.imageSmoothingQuality = 'high';
+          ctx.drawImage(img, 0, 0, width, height);
+        }
+
+        // Try high quality 0.88 first
+        let result = canvas.toDataURL('image/jpeg', 0.88);
+        if (result.length > 900 * 1024) {
+          // If still over 900KB, slightly step down quality to fit comfortably within Firestore doc
+          result = canvas.toDataURL('image/jpeg', 0.80);
+        }
+        callback(result);
+      };
+      img.src = event.target?.result as string;
+    };
+    reader.readAsDataURL(file);
+  };
 
   // Download media helper
   const downloadMediaFile = (url: string, filename: string) => {
@@ -535,13 +420,11 @@ export default function App() {
   const handleVaultFilePreview = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
-    setSelectedUploadFile(file);
-
-    const isVideo = file.type.startsWith('video');
-    const localUrl = URL.createObjectURL(file);
-    setPendingUploadData({
-      type: isVideo ? 'video' : 'image',
-      url: localUrl
+    processMediaForBestQuality(file, (base64) => {
+      setPendingUploadData({
+        type: file.type.startsWith('video') ? 'video' : 'image',
+        url: base64
+      });
     });
   };
 
@@ -550,63 +433,34 @@ export default function App() {
       alert('Selecione uma foto ou vídeo para publicar.');
       return;
     }
+    const newDrop: VaultItem = {
+      id: 'drop_' + Date.now() + '_' + Math.random().toString(36).substring(2, 6),
+      authorId: activeMember.id,
+      authorName: activeMember.name,
+      authorColor: activeMember.color,
+      type: pendingUploadData.type,
+      url: pendingUploadData.url,
+      caption: uploadCaption.trim() || '',
+      timestamp: Date.now(),
+      comments: []
+    };
 
-    const dropId = 'drop_' + Date.now() + '_' + Math.random().toString(36).substring(2, 6);
-    setIsUploadingMedia(true);
-    setUploadProgressStatus('Iniciando upload para o Cloud Storage...');
+    setVaultItems((prev) => [newDrop, ...prev]);
+    setIsUploadModalOpen(false);
+    setPendingUploadData(null);
+    setUploadCaption('');
 
     try {
-      let finalUrl = pendingUploadData.url;
-
-      if (selectedUploadFile) {
-        setUploadProgressStatus('Enviando mídia diretamente para o Cloud Storage...');
-        finalUrl = await uploadVaultMedia(selectedUploadFile, (status) => setUploadProgressStatus(status));
-      }
-
-      setUploadProgressStatus('Gravando no Cloud Firestore...');
-
-      const newDrop: VaultItem = {
-        id: dropId,
-        authorId: activeMember.id,
-        authorName: activeMember.name,
-        authorColor: activeMember.color,
-        type: pendingUploadData.type,
-        url: finalUrl,
-        midiaUrl: finalUrl,
-        isChunked: false,
-        totalChunks: 0,
-        caption: uploadCaption.trim() || '',
-        timestamp: Date.now(),
-        comments: [],
-        reactions: {},
-        reactedBy: {},
-        deviceReactions: {}
-      };
-
-      // Save to both root tmj_vault and artifacts path
-      await setDoc(doc(db, 'tmj_vault', newDrop.id), newDrop).catch(() => null);
-      await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'tmj_vault', newDrop.id), newDrop).catch(() => null);
-
-      setVaultItems((prev) => [newDrop, ...prev]);
-      setIsUploadModalOpen(false);
-      setPendingUploadData(null);
-      setSelectedUploadFile(null);
-      setUploadCaption('');
-      setUploadProgressStatus('');
-      setIsUploadingMedia(false);
-    } catch (err: any) {
-      console.error('Error saving drop to Cloud Storage / Firestore:', err);
-      setIsUploadingMedia(false);
-      setUploadProgressStatus('');
-      alert('Erro ao salvar no Cloud Storage / Firestore: ' + (err?.message || 'Tente novamente'));
+      await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'tmj_vault', newDrop.id), newDrop);
+    } catch (err) {
+      handleFirestoreError(err, OperationType.WRITE, 'tmj_vault');
     }
   };
 
   const deleteVaultItem = async (docId: string) => {
     setVaultItems((prev) => prev.filter((item) => (item.docId || item.id) !== docId));
     try {
-      await deleteDoc(doc(db, 'tmj_vault', docId)).catch(() => null);
-      await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'tmj_vault', docId)).catch(() => null);
+      await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'tmj_vault', docId));
     } catch (err) {
       handleFirestoreError(err, OperationType.DELETE, `tmj_vault/${docId}`);
     }
@@ -633,25 +487,33 @@ export default function App() {
     );
 
     try {
-      await setDoc(doc(db, 'tmj_vault', docId), updatedItem, { merge: true }).catch(() => null);
       await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'tmj_vault', docId), updatedItem, { merge: true });
     } catch (err) {
       handleFirestoreError(err, OperationType.UPDATE, `tmj_vault/${docId}`);
     }
   };
 
-  // Helper to get persistent identifier for user or viewer device
+  // Helper to get persistent identifier for user or viewer
   const getCurrentActorId = () => {
-    if (isViewerMode) return getViewerDeviceId();
-    return activeMember?.id || getViewerDeviceId();
+    if (activeMember?.id) return activeMember.id;
+    let viewerId = typeof window !== 'undefined' ? localStorage.getItem('tmj_viewer_id') : null;
+    if (!viewerId) {
+      viewerId = 'guest_' + Math.random().toString(36).substring(2, 9);
+      if (typeof window !== 'undefined') localStorage.setItem('tmj_viewer_id', viewerId);
+    }
+    return viewerId;
   };
 
   // Entry handler for Visualizar (Guest / Public viewer)
   const handleEnterViewerMode = () => {
-    const viewerDeviceId = getViewerDeviceId();
+    let viewerId = typeof window !== 'undefined' ? localStorage.getItem('tmj_viewer_id') : null;
+    if (!viewerId) {
+      viewerId = 'guest_' + Math.random().toString(36).substring(2, 9);
+      if (typeof window !== 'undefined') localStorage.setItem('tmj_viewer_id', viewerId);
+    }
     const guestMember: SquadMember = {
-      id: viewerDeviceId,
-      name: 'VISUALIZADOR',
+      id: viewerId,
+      name: 'VISITANTE',
       handle: '@espectador',
       role: 'Apenas Ver',
       color: 'var(--color-sprayCyan)',
@@ -664,57 +526,36 @@ export default function App() {
     setCurrentScreen('app');
   };
 
-  // Emoji Reaction Toggle: 1 REACTION PER DEVICE for Visualizador & Members
+  // Emoji Reaction Toggle (Available to squad members and visualizer viewers)
   const handleToggleReaction = async (docId: string, emoji: string) => {
     const item = vaultItems.find((i) => (i.docId || i.id) === docId);
     if (!item) return;
 
-    // Use device ID for visualizador, member ID for squad
-    const actorId = isViewerMode ? getViewerDeviceId() : (activeMember?.id || getViewerDeviceId());
-
+    const actorId = activeMember?.id || getCurrentActorId();
     const currentReactions: Record<string, number> = { ...(item.reactions || {}) };
     const currentReactedBy: Record<string, string[]> = { ...(item.reactedBy || {}) };
-    const currentDeviceReactions: Record<string, string> = { ...(item.deviceReactions || {}) };
 
-    // What emoji has this device or member already chosen for this drop?
-    const previousEmoji = currentDeviceReactions[actorId] || (
-      Object.keys(currentReactedBy).find((e) => currentReactedBy[e]?.includes(actorId))
-    );
+    const userList: string[] = currentReactedBy[emoji] || [];
+    const alreadyReacted = userList.includes(actorId);
 
-    let updatedReactions = { ...currentReactions };
-    let updatedReactedBy = { ...currentReactedBy };
-    let updatedDeviceReactions = { ...currentDeviceReactions };
+    let newUserList: string[];
+    let newCount: number;
 
-    if (previousEmoji === emoji) {
-      // Tapped the same emoji again -> remove reaction (toggle off)
-      delete updatedDeviceReactions[actorId];
-
-      const prevList = updatedReactedBy[emoji] || [];
-      updatedReactedBy[emoji] = prevList.filter((u) => u !== actorId);
-      updatedReactions[emoji] = Math.max(0, (updatedReactions[emoji] || 1) - 1);
+    if (alreadyReacted) {
+      newUserList = userList.filter((u) => u !== actorId);
+      newCount = Math.max(0, (currentReactions[emoji] || 1) - 1);
     } else {
-      // 1 REACTION PER DEVICE:
-      // If there was an earlier reaction on this device, decrement it and remove this actor
-      if (previousEmoji) {
-        const prevList = updatedReactedBy[previousEmoji] || [];
-        updatedReactedBy[previousEmoji] = prevList.filter((u) => u !== actorId);
-        updatedReactions[previousEmoji] = Math.max(0, (updatedReactions[previousEmoji] || 1) - 1);
-      }
-
-      // Add the new reaction
-      updatedDeviceReactions[actorId] = emoji;
-      const newList = updatedReactedBy[emoji] || [];
-      if (!newList.includes(actorId)) {
-        updatedReactedBy[emoji] = [...newList, actorId];
-      }
-      updatedReactions[emoji] = (updatedReactions[emoji] || 0) + 1;
+      newUserList = [...userList, actorId];
+      newCount = (currentReactions[emoji] || 0) + 1;
     }
+
+    const updatedReactions = { ...currentReactions, [emoji]: newCount };
+    const updatedReactedBy = { ...currentReactedBy, [emoji]: newUserList };
 
     const updatedItem: VaultItem = {
       ...item,
       reactions: updatedReactions,
-      reactedBy: updatedReactedBy,
-      deviceReactions: updatedDeviceReactions
+      reactedBy: updatedReactedBy
     };
 
     setVaultItems((prev) =>
@@ -727,21 +568,8 @@ export default function App() {
 
     try {
       await setDoc(
-        doc(db, 'tmj_vault', docId),
-        { 
-          reactions: updatedReactions, 
-          reactedBy: updatedReactedBy, 
-          deviceReactions: updatedDeviceReactions 
-        },
-        { merge: true }
-      ).catch(() => null);
-      await setDoc(
         doc(db, 'artifacts', appId, 'public', 'data', 'tmj_vault', docId),
-        { 
-          reactions: updatedReactions, 
-          reactedBy: updatedReactedBy, 
-          deviceReactions: updatedDeviceReactions 
-        },
+        { reactions: updatedReactions, reactedBy: updatedReactedBy },
         { merge: true }
       );
     } catch (err) {
@@ -768,7 +596,6 @@ export default function App() {
     setChatMessages((prev) => [...prev, msg]);
 
     try {
-      await setDoc(doc(db, 'tmj_chat', msg.id), msg).catch(() => null);
       await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'tmj_chat', msg.id), msg);
     } catch (err) {
       handleFirestoreError(err, OperationType.WRITE, 'tmj_chat');
@@ -779,48 +606,61 @@ export default function App() {
   const deleteChatMessage = async (msgId: string) => {
     setChatMessages((prev) => prev.filter((m) => (m.docId || m.id) !== msgId));
     try {
-      await deleteDoc(doc(db, 'tmj_chat', msgId)).catch(() => null);
       await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'tmj_chat', msgId));
     } catch (err) {
       handleFirestoreError(err, OperationType.DELETE, `tmj_chat/${msgId}`);
     }
   };
 
-  const sendChatMedia = async (event: React.ChangeEvent<HTMLInputElement>) => {
+  const sendChatMedia = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file || !activeMember) return;
-    // Reset file input value to allow re-upload of the same file if desired
-    event.target.value = '';
 
-    const isAudio = file.type.startsWith('audio/');
-    const isVideo = file.type.startsWith('video/');
+    if (file.type.startsWith('audio/')) {
+      const reader = new FileReader();
+      reader.onload = async (e) => {
+        const base64Audio = e.target?.result as string;
+        const msg: ChatMessage = {
+          id: 'msg_' + Date.now() + '_' + Math.random().toString(36).substring(2, 6),
+          authorId: activeMember.id,
+          authorName: activeMember.name,
+          authorColor: activeMember.color,
+          authorAvatar: activeMember.customAvatar || null,
+          audioUrl: base64Audio,
+          duration: 10,
+          timestamp: Date.now()
+        };
+        setChatMessages((prev) => [...prev, msg]);
+        try {
+          await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'tmj_chat', msg.id), msg);
+        } catch (err) {
+          handleFirestoreError(err, OperationType.WRITE, 'tmj_chat');
+        }
+      };
+      reader.readAsDataURL(file);
+      event.target.value = '';
+      return;
+    }
 
-    try {
-      // Direct upload to Cloud Storage for Firebase (Zero Base64 in Firestore)
-      const downloadUrl = await uploadChatMedia(file);
-
+    processMediaForBestQuality(file, async (base64) => {
       const msg: ChatMessage = {
         id: 'msg_' + Date.now() + '_' + Math.random().toString(36).substring(2, 6),
         authorId: activeMember.id,
         authorName: activeMember.name,
         authorColor: activeMember.color,
         authorAvatar: activeMember.customAvatar || null,
-        mediaUrl: isAudio ? undefined : downloadUrl,
-        midiaUrl: downloadUrl,
-        mediaType: isVideo ? 'video' : isAudio ? undefined : 'image',
-        audioUrl: isAudio ? downloadUrl : undefined,
-        duration: isAudio ? 10 : undefined,
+        mediaUrl: base64,
+        mediaType: file.type.startsWith('video') ? 'video' : 'image',
         timestamp: Date.now()
       };
-
       setChatMessages((prev) => [...prev, msg]);
-      await setDoc(doc(db, 'tmj_chat', msg.id), msg).catch(() => null);
-      await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'tmj_chat', msg.id), msg);
-    } catch (err) {
-      console.error('Erro ao enviar mídia para o Cloud Storage:', err);
-      handleFirestoreError(err, OperationType.WRITE, 'tmj_chat');
-      alert('Erro ao enviar mídia para o Cloud Storage. Verifique a conexão e tente novamente.');
-    }
+      try {
+        await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'tmj_chat', msg.id), msg);
+      } catch (err) {
+        handleFirestoreError(err, OperationType.WRITE, 'tmj_chat');
+      }
+    });
+    event.target.value = '';
   };
 
   // Supported MIME types detection for MediaRecorder
@@ -925,36 +765,30 @@ export default function App() {
     }
   };
 
-  const sendChatAudio = async () => {
+  const sendChatAudio = () => {
     if (!recordedAudioBlob || !activeMember) return;
-    const blobToSend = recordedAudioBlob;
-    const durationToSend = recSeconds;
-    discardChatAudio();
-
-    try {
-      // Direct upload to Cloud Storage for Firebase (Zero Base64 in Firestore)
-      const downloadUrl = await uploadChatMedia(blobToSend);
-
+    const reader = new FileReader();
+    reader.readAsDataURL(recordedAudioBlob);
+    reader.onloadend = async () => {
+      const base64Audio = reader.result as string;
       const msg: ChatMessage = {
         id: 'msg_' + Date.now() + '_' + Math.random().toString(36).substring(2, 6),
         authorId: activeMember.id,
         authorName: activeMember.name,
         authorColor: activeMember.color,
         authorAvatar: activeMember.customAvatar || null,
-        audioUrl: downloadUrl,
-        midiaUrl: downloadUrl,
-        duration: durationToSend || 5,
+        audioUrl: base64Audio,
+        duration: recSeconds,
         timestamp: Date.now()
       };
-
       setChatMessages((prev) => [...prev, msg]);
-      await setDoc(doc(db, 'tmj_chat', msg.id), msg).catch(() => null);
-      await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'tmj_chat', msg.id), msg);
-    } catch (err) {
-      console.error('Erro ao enviar áudio para o Cloud Storage:', err);
-      handleFirestoreError(err, OperationType.WRITE, 'tmj_chat');
-      alert('Erro ao enviar áudio para o Cloud Storage. Tente novamente.');
-    }
+      discardChatAudio();
+      try {
+        await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'tmj_chat', msg.id), msg);
+      } catch (err) {
+        handleFirestoreError(err, OperationType.WRITE, 'tmj_chat');
+      }
+    };
   };
 
   const togglePlayChatAudio = (audioId: string, duration?: number) => {
@@ -1003,20 +837,43 @@ export default function App() {
     setIsSquadModalOpen(true);
   };
 
-  // Avatar file upload handler (Image or animated GIF via Cloud Storage)
-  const handleAvatarFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  // Avatar file upload handler (Image or animated GIF)
+  const handleAvatarFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (!file || !activeMember) return;
-    e.target.value = '';
+    if (!file) return;
 
-    try {
-      // Direct upload to Cloud Storage for Firebase (Zero Base64 in Firestore)
-      const downloadUrl = await uploadAvatarMedia(file, activeMember.id);
-      setEditAvatar(downloadUrl);
-    } catch (err) {
-      console.error('Erro ao fazer upload do avatar para Cloud Storage:', err);
-      alert('Erro ao enviar avatar para o Cloud Storage. Tente novamente.');
+    // For animated GIF: preserve raw frames directly via base64
+    if (file.type === 'image/gif') {
+      const reader = new FileReader();
+      reader.onload = (ev) => {
+        setEditAvatar(ev.target?.result as string);
+      };
+      reader.readAsDataURL(file);
+      return;
     }
+
+    // For standard images: crop/scale to crisp 320x320 square avatar
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        const size = Math.min(img.width, img.height);
+        canvas.width = 320;
+        canvas.height = 320;
+        const ctx = canvas.getContext('2d');
+        if (ctx) {
+          ctx.imageSmoothingEnabled = true;
+          ctx.imageSmoothingQuality = 'high';
+          const sx = (img.width - size) / 2;
+          const sy = (img.height - size) / 2;
+          ctx.drawImage(img, sx, sy, size, size, 0, 0, 320, 320);
+        }
+        setEditAvatar(canvas.toDataURL('image/jpeg', 0.88));
+      };
+      img.src = ev.target?.result as string;
+    };
+    reader.readAsDataURL(file);
   };
 
   const saveSquadProfile = async () => {
@@ -1032,16 +889,6 @@ export default function App() {
     setSquadMembers((prev) => prev.map((m) => (m.id === updated.id ? updated : m)));
     await persistMemberToFirestore(updated);
     setIsSquadModalOpen(false);
-  };
-
-  // Limpar todos os dados antigos e recriar banco do Trio TMJ no Firestore sob novos termos
-  const handleResetAndReseedDatabase = async () => {
-    try {
-      await purgeAndRebuildFirestoreNewTerms();
-      setIsSquadModalOpen(false);
-    } catch (err) {
-      console.error('Erro ao recriar banco:', err);
-    }
   };
 
   return (
@@ -1590,20 +1437,18 @@ export default function App() {
                             </button>
                           </div>
 
-                          <div className="relative group bg-black/95 w-full flex items-center justify-center overflow-hidden">
+                          <div className="relative group bg-asphalt">
                             {item.type === 'video' ? (
                               <StreetVideoPlayer
                                 src={item.url}
-                                dropId={docId}
-                                isChunked={item.isChunked}
-                                className="w-full"
+                                className="w-full max-h-96"
                                 onFullscreenRequest={() => setFullMediaModalItem(item)}
                               />
                             ) : (
                               <img
                                 src={item.url}
                                 alt={item.caption || 'Vault Drop'}
-                                className="w-full max-h-[75vh] object-contain cursor-pointer block mx-auto"
+                                className="w-full max-h-96 object-cover cursor-pointer"
                                 onClick={() => setFullMediaModalItem(item)}
                               />
                             )}
@@ -1626,14 +1471,12 @@ export default function App() {
                               <p className="font-sans text-sm text-chalk">{item.caption}</p>
                             )}
 
-                            {/* SISTEMA DE REAÇÃO STREET COM 14 EMOJIS FIXOS (1 REAÇÃO POR DISPOSITIVO) */}
+                            {/* SISTEMA DE REAÇÃO STREET COM 14 EMOJIS FIXOS */}
                             <div className="pt-1 border-t border-bunker/80">
                               <MediaReactions
                                 reactions={item.reactions}
                                 reactedBy={item.reactedBy}
-                                currentDeviceId={isViewerMode ? getViewerDeviceId() : (activeMember?.id || getViewerDeviceId())}
-                                userSelectedEmoji={item.deviceReactions?.[isViewerMode ? getViewerDeviceId() : (activeMember?.id || getViewerDeviceId())] || null}
-                                isViewer={isViewerMode}
+                                currentUserId={activeMember?.id || getCurrentActorId()}
                                 onToggleReaction={(emoji) => handleToggleReaction(docId, emoji)}
                               />
                             </div>
@@ -1706,7 +1549,7 @@ export default function App() {
                     </div>
                   ) : (
                     chatMessages.map((m) => {
-                      const isMine = m.authorId === activeMember.id;
+                      const isMine = !!activeMember && m.authorId === activeMember.id;
                       const isAudioPlaying = playingAudioId === m.id;
                       const durStr = `00:${String(m.duration || 5).padStart(2, '0')}`;
                       
@@ -2031,11 +1874,11 @@ export default function App() {
                       <p className="font-mono text-[10px] text-stencil mt-1">FOTO OU VÍDEO (ALTA DEFINIÇÃO / GIF)</p>
                     </div>
                   ) : (
-                    <div id="upload-preview-box" className="relative rounded-sm overflow-hidden max-h-64 flex items-center justify-center bg-black/90 border border-bunker">
+                    <div id="upload-preview-box" className="relative rounded-sm overflow-hidden max-h-56 flex items-center justify-center bg-asphalt border border-bunker">
                       {pendingUploadData.type === 'video' ? (
-                        <StreetVideoPlayer src={pendingUploadData.url} className="w-full" />
+                        <StreetVideoPlayer src={pendingUploadData.url} className="w-full h-48" />
                       ) : (
-                        <img src={pendingUploadData.url} alt="Preview" className="w-full max-h-56 object-contain" />
+                        <img src={pendingUploadData.url} alt="Preview" className="w-full h-48 object-cover" />
                       )}
                     </div>
                   )}
@@ -2045,49 +1888,19 @@ export default function App() {
                 <input
                   id="upload-caption"
                   type="text"
-                  disabled={isUploadingMedia}
                   placeholder="Escreva a legenda..."
                   value={uploadCaption}
                   onChange={(e) => setUploadCaption(e.target.value)}
-                  className="w-full bg-asphalt border-2 border-bunker rounded-sm px-3 py-3 text-sm text-chalk mb-4 focus:border-acid focus:outline-none font-sans disabled:opacity-50"
+                  className="w-full bg-asphalt border-2 border-bunker rounded-sm px-3 py-3 text-sm text-chalk mb-6 focus:border-acid focus:outline-none font-sans"
                 />
-
-                {/* Status indicator during upload */}
-                {isUploadingMedia && (
-                  <div className="bg-asphalt border border-acid/50 p-2.5 rounded-sm mb-4 flex items-center gap-2.5 animate-pulse">
-                    <Loader2 className="w-4 h-4 text-acid animate-spin shrink-0" />
-                    <span className="font-mono text-xs text-acid font-bold">
-                      {uploadProgressStatus || 'Processando upload no Firebase...'}
-                    </span>
-                  </div>
-                )}
 
                 <button
                   type="button"
-                  disabled={isUploadingMedia || !pendingUploadData}
                   onClick={submitVaultDrop}
-                  className="w-full bg-acid text-asphalt font-display text-xl tracking-widest py-3 rounded-sm border-2 border-asphalt shadow-[4px_4px_0px_var(--color-asphalt)] active:translate-y-1 active:shadow-[1px_1px_0px_var(--color-asphalt)] transition-all cursor-pointer font-bold disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 mb-3"
+                  className="w-full bg-acid text-asphalt font-display text-xl tracking-widest py-3 rounded-sm border-2 border-asphalt shadow-[4px_4px_0px_var(--color-asphalt)] active:translate-y-1 active:shadow-[1px_1px_0px_var(--color-asphalt)] transition-all cursor-pointer font-bold"
                 >
-                  {isUploadingMedia ? (
-                    <>
-                      <Loader2 className="w-5 h-5 animate-spin" />
-                      <span>SALVANDO DROP...</span>
-                    </>
-                  ) : (
-                    <span>PUBLICAR NA MÍDIA</span>
-                  )}
+                  PUBLICAR NA MÍDIA
                 </button>
-
-                {/* Status do Storage: Supabase Ativo */}
-                <div className="border-t border-bunker pt-2.5">
-                  <div className="flex items-center justify-between text-[10px] font-mono text-sprayCyan bg-asphalt/80 border border-sprayCyan/30 p-2 rounded-xs">
-                    <span className="flex items-center gap-1.5 font-bold">
-                      <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
-                      <span>STORAGE: SUPABASE (TMJ-MEDIA) ATIVO</span>
-                    </span>
-                    <span className="text-[9px] text-stencil uppercase">100% Gratuito</span>
-                  </div>
-                </div>
               </div>
             </div>
           )}
@@ -2111,7 +1924,7 @@ export default function App() {
 
                 <div id="squad-edit-form" className="space-y-4 mb-6 max-h-[65vh] overflow-y-auto pr-1">
                   {squadMembers.map((m) => {
-                    const isCurrent = m.id === activeMember.id;
+                    const isCurrent = !!activeMember && m.id === activeMember.id;
                     const resolvedColor = normalizeSquadColor(m.color);
                     return (
                       <div
@@ -2223,18 +2036,9 @@ export default function App() {
                 <button
                   type="button"
                   onClick={saveSquadProfile}
-                  className="w-full bg-acid text-asphalt font-display text-xl tracking-widest py-3 rounded-sm border-2 border-asphalt shadow-[4px_4px_0px_var(--color-asphalt)] active:translate-y-1 active:shadow-none transition-all cursor-pointer font-bold mb-2.5"
+                  className="w-full bg-acid text-asphalt font-display text-xl tracking-widest py-3 rounded-sm border-2 border-asphalt shadow-[4px_4px_0px_var(--color-asphalt)] active:translate-y-1 active:shadow-none transition-all cursor-pointer font-bold"
                 >
                   SALVAR ALTERAÇÕES
-                </button>
-
-                {/* BOTÃO PARA RECRIAR BANCO TMJ LIMPO SOB NOVOS TERMOS */}
-                <button
-                  type="button"
-                  onClick={handleResetAndReseedDatabase}
-                  className="w-full bg-bunker hover:bg-concrete border border-sprayCyan/60 text-sprayCyan font-mono text-[11px] tracking-wider py-2.5 rounded-sm transition-all cursor-pointer flex items-center justify-center gap-2"
-                >
-                  <span>🔄 RECRIAR / RESUBIR DADOS DO BANCO TMJ</span>
                 </button>
               </div>
             </div>
@@ -2280,10 +2084,8 @@ export default function App() {
                 {fullMediaModalItem.type === 'video' ? (
                   <StreetVideoPlayer
                     src={fullMediaModalItem.url}
-                    dropId={fullMediaModalItem.docId || fullMediaModalItem.id}
-                    isChunked={fullMediaModalItem.isChunked}
                     autoPlay
-                    className="w-full"
+                    className="w-full max-h-[72vh] rounded-sm"
                   />
                 ) : (
                   <img src={fullMediaModalItem.url} alt="Full view" className="max-w-full max-h-[72vh] object-contain rounded-sm shadow-2xl" />
@@ -2298,9 +2100,7 @@ export default function App() {
                 <MediaReactions
                   reactions={fullMediaModalItem.reactions}
                   reactedBy={fullMediaModalItem.reactedBy}
-                  currentDeviceId={isViewerMode ? getViewerDeviceId() : (activeMember?.id || getViewerDeviceId())}
-                  userSelectedEmoji={fullMediaModalItem.deviceReactions?.[isViewerMode ? getViewerDeviceId() : (activeMember?.id || getViewerDeviceId())] || null}
-                  isViewer={isViewerMode}
+                  currentUserId={activeMember?.id || getCurrentActorId()}
                   onToggleReaction={(emoji) => handleToggleReaction(fullMediaModalItem.docId || fullMediaModalItem.id, emoji)}
                 />
               </div>

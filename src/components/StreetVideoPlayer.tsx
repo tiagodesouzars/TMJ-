@@ -17,8 +17,6 @@ interface StreetVideoPlayerProps {
   loop?: boolean;
   aspectRatio?: string;
   onFullscreenRequest?: () => void;
-  dropId?: string;
-  isChunked?: boolean;
 }
 
 export const StreetVideoPlayer: React.FC<StreetVideoPlayerProps> = ({
@@ -28,9 +26,7 @@ export const StreetVideoPlayer: React.FC<StreetVideoPlayerProps> = ({
   autoPlay = false,
   loop = false,
   aspectRatio,
-  onFullscreenRequest,
-  dropId,
-  isChunked
+  onFullscreenRequest
 }) => {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -44,10 +40,7 @@ export const StreetVideoPlayer: React.FC<StreetVideoPlayerProps> = ({
   const [showControls, setShowControls] = useState<boolean>(true);
   const [isFullscreen, setIsFullscreen] = useState<boolean>(false);
   const [showCenterFeedback, setShowCenterFeedback] = useState<boolean>(false);
-
-  // Dynamic aspect ratio detection for adaptive box
-  const [videoAspect, setVideoAspect] = useState<number | null>(null);
-  const [formatTag, setFormatTag] = useState<string>('NATIVO');
+  const [videoRatio, setVideoRatio] = useState<number | null>(null);
 
   // Format seconds to mm:ss
   const formatTime = (seconds: number) => {
@@ -83,28 +76,24 @@ export const StreetVideoPlayer: React.FC<StreetVideoPlayerProps> = ({
     }
   };
 
-  // Video loaded metadata: detect exact width & height and adapt container box
   const handleLoadedMetadata = () => {
-    if (!videoRef.current) return;
-    setDuration(videoRef.current.duration);
-
-    const vw = videoRef.current.videoWidth;
-    const vh = videoRef.current.videoHeight;
-    if (vw && vh) {
-      const ratio = vw / vh;
-      setVideoAspect(ratio);
-
-      if (vh > vw * 1.25) {
-        setFormatTag('VERTICAL 9:16');
-      } else if (vw > vh * 1.35) {
-        setFormatTag('WIDESCREEN 16:9');
-      } else if (Math.abs(vw - vh) < 30) {
-        setFormatTag('QUADRADO 1:1');
-      } else {
-        setFormatTag('4:3');
+    if (videoRef.current) {
+      setDuration(videoRef.current.duration);
+      const w = videoRef.current.videoWidth;
+      const h = videoRef.current.videoHeight;
+      if (w > 0 && h > 0) {
+        setVideoRatio(w / h);
       }
     }
   };
+
+  // Immediate detection if video is already cached or loaded
+  useEffect(() => {
+    if (videoRef.current && videoRef.current.videoWidth > 0 && videoRef.current.videoHeight > 0) {
+      setVideoRatio(videoRef.current.videoWidth / videoRef.current.videoHeight);
+      setDuration(videoRef.current.duration);
+    }
+  }, [src]);
 
   const handleSeek = (e: React.ChangeEvent<HTMLInputElement>) => {
     const targetTime = parseFloat(e.target.value);
@@ -147,6 +136,7 @@ export const StreetVideoPlayer: React.FC<StreetVideoPlayerProps> = ({
       containerRef.current.requestFullscreen().then(() => {
         setIsFullscreen(true);
       }).catch(() => {
+        // Fallback to video native fullscreen for iOS safari
         if (videoRef.current && (videoRef.current as any).webkitEnterFullscreen) {
           (videoRef.current as any).webkitEnterFullscreen();
         }
@@ -166,6 +156,7 @@ export const StreetVideoPlayer: React.FC<StreetVideoPlayerProps> = ({
     return () => document.removeEventListener('fullscreenchange', handleFullscreenChange);
   }, []);
 
+  // Controls auto-hide logic
   const handleUserActivity = () => {
     setShowControls(true);
     if (hideControlsTimerRef.current) {
@@ -187,7 +178,6 @@ export const StreetVideoPlayer: React.FC<StreetVideoPlayerProps> = ({
   }, []);
 
   const progressPct = duration > 0 ? (currentTime / duration) * 100 : 0;
-  const resolvedAspect = aspectRatio || (videoAspect ? `${videoAspect}` : undefined);
 
   return (
     <div
@@ -195,13 +185,13 @@ export const StreetVideoPlayer: React.FC<StreetVideoPlayerProps> = ({
       onMouseMove={handleUserActivity}
       onTouchStart={handleUserActivity}
       onMouseLeave={() => isPlaying && setShowControls(false)}
-      className={`relative group bg-black/95 overflow-hidden select-none border border-bunker flex items-center justify-center w-full transition-all duration-200 ${className}`}
+      className={`relative group bg-black overflow-hidden select-none border border-bunker w-full mx-auto flex items-center justify-center ${className}`}
       style={{
-        aspectRatio: resolvedAspect,
-        maxHeight: 'min(75vh, 600px)'
+        aspectRatio: videoRatio ? `${videoRatio}` : aspectRatio ? aspectRatio : '16/9',
+        maxHeight: 'min(75vh, 680px)'
       }}
     >
-      {/* Video Element - object-contain ensures 100% of the video is visible without cropping */}
+      {/* Video Element */}
       <video
         ref={videoRef}
         src={src}
@@ -216,29 +206,29 @@ export const StreetVideoPlayer: React.FC<StreetVideoPlayerProps> = ({
           setShowControls(true);
         }}
         onClick={handlePlayPause}
-        className="w-full h-full object-contain cursor-pointer block mx-auto"
+        className="w-full h-full object-contain cursor-pointer block mx-auto bg-black"
       />
 
-      {/* Street Grain / Scanline Overlay */}
+      {/* Street Grain / Scanline Overlay (Subtle vibe) */}
       <div 
-        className="absolute inset-0 pointer-events-none opacity-15 bg-linear-to-b from-transparent via-black/10 to-transparent"
+        className="absolute inset-0 pointer-events-none opacity-20 bg-linear-to-b from-transparent via-black/10 to-transparent"
         style={{ backgroundSize: '100% 4px' }}
       ></div>
 
-      {/* Top Banner: VHS REC + Format Badge + Squad Tag */}
+      {/* Top Banner: VHS REC + Squad Tag */}
       <div 
-        className={`absolute top-0 inset-x-0 p-2 sm:p-2.5 flex items-center justify-between z-20 pointer-events-none transition-opacity duration-200 ${
+        className={`absolute top-0 inset-x-0 p-2.5 flex items-center justify-between z-20 pointer-events-none transition-opacity duration-200 ${
           showControls || !isPlaying ? 'opacity-100' : 'opacity-0'
         }`}
       >
-        <div className="flex items-center gap-1.5 bg-asphalt/90 backdrop-blur-xs border border-bunker px-2 py-0.5 rounded-xs">
+        <div className="flex items-center gap-1.5 bg-asphalt/85 border border-bunker px-2 py-0.5 rounded-xs">
           <span className={`w-2 h-2 rounded-full ${isPlaying ? 'bg-red-500 animate-pulse' : 'bg-neutral-500'}`}></span>
           <span className="font-mono text-[9px] text-sprayCyan font-bold tracking-widest uppercase">
-            REC ● {formatTag}
+            REC ● VHS-047
           </span>
         </div>
 
-        <div className="bg-asphalt/90 backdrop-blur-xs border border-bunker px-2 py-0.5 rounded-xs">
+        <div className="bg-asphalt/85 border border-bunker px-2 py-0.5 rounded-xs">
           <span className="font-mono text-[9px] text-acid font-bold tracking-widest uppercase">
             † TMJ †
           </span>
@@ -249,13 +239,13 @@ export const StreetVideoPlayer: React.FC<StreetVideoPlayerProps> = ({
       {(!isPlaying || showCenterFeedback) && (
         <div 
           onClick={handlePlayPause}
-          className="absolute inset-0 flex items-center justify-center z-15 bg-black/25 cursor-pointer transition-opacity"
+          className="absolute inset-0 flex items-center justify-center z-15 bg-asphalt/30 cursor-pointer transition-opacity"
         >
-          <div className="w-13 h-13 sm:w-16 sm:h-16 rounded-sm bg-acid text-asphalt flex items-center justify-center shadow-[4px_4px_0px_var(--color-urbanOrange)] active:scale-95 transition-transform">
+          <div className="w-14 h-14 sm:w-16 sm:h-16 rounded-sm bg-acid text-asphalt flex items-center justify-center shadow-[4px_4px_0px_var(--color-urbanOrange)] active:scale-95 transition-transform">
             {isPlaying ? (
-              <Pause className="w-6 h-6 sm:w-8 sm:h-8 fill-asphalt" />
+              <Pause className="w-7 h-7 sm:w-8 sm:h-8 fill-asphalt" />
             ) : (
-              <Play className="w-6 h-6 sm:w-8 sm:h-8 fill-asphalt ml-1" />
+              <Play className="w-7 h-7 sm:w-8 sm:h-8 fill-asphalt ml-1" />
             )}
           </div>
         </div>
@@ -263,7 +253,7 @@ export const StreetVideoPlayer: React.FC<StreetVideoPlayerProps> = ({
 
       {/* Street Video Bottom Control Bar */}
       <div
-        className={`absolute bottom-0 inset-x-0 bg-gradient-to-t from-black via-black/85 to-transparent px-3 pt-6 pb-2.5 z-20 transition-all duration-200 ${
+        className={`absolute bottom-0 inset-x-0 bg-gradient-to-t from-asphalt via-asphalt/90 to-transparent px-3 pt-6 pb-2.5 z-20 transition-all duration-200 ${
           showControls || !isPlaying ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-2 pointer-events-none'
         }`}
       >

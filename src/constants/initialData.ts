@@ -89,8 +89,7 @@ export const INITIAL_DROPS: VaultDrop[] = [
     type: 'audio',
     title: 'BEAT 808 BOOM BAP // RASCUNHO #04',
     caption: 'Fiz no MPC ontem de madrugada. 92 BPM com bumbo seco e grave 808 distorcido no ponto.',
-    url: 'https://cdn.freesound.org/previews/563/563768_11861866-lq.mp3',
-    midiaUrl: 'https://cdn.freesound.org/previews/563/563768_11861866-lq.mp3',
+    url: 'data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQAAAAA=', // Will be played with web audio synth
     authorId: 'j2',
     authorName: 'JORGE',
     authorHandle: '@jorge',

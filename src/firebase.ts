@@ -7,7 +7,6 @@ const app = !getApps().length ? initializeApp(firebaseConfig) : getApps()[0];
 
 export const db = getFirestore(app, firebaseConfig.firestoreDatabaseId);
 export const auth = getAuth(app);
-export const appId = firebaseConfig.projectId || 'triotmj-3187e';
 
 export enum OperationType {
   CREATE = 'create',
