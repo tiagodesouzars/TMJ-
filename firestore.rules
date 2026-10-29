@@ -5,12 +5,17 @@ service cloud.firestore {
       allow read, write: if false;
     }
 
-    // Artifacts data collections (used by TMJ app)
-    match /artifacts/{appId}/public/data/{col}/{document=**} {
+    // Connection test endpoint
+    match /test/{docId} {
+      allow read: if true;
+    }
+
+    // Schema state & migration metadata
+    match /tmj_meta/{docId} {
       allow read, write: if true;
     }
 
-    // Direct root collections
+    // Direct root collections under new terms (midiaUrl + Cloud Storage)
     match /tmj_members/{document=**} {
       allow read, write: if true;
     }
@@ -18,6 +23,14 @@ service cloud.firestore {
       allow read, write: if true;
     }
     match /tmj_chat/{document=**} {
+      allow read, write: if true;
+    }
+    match /tmj_vault_chunks/{document=**} {
+      allow read, write: if true;
+    }
+
+    // Artifacts data collections (for sync and legacy cleanup)
+    match /artifacts/{appId}/public/data/{col}/{document=**} {
       allow read, write: if true;
     }
   }

@@ -3,6 +3,8 @@ import { db, auth, handleFirestoreError, OperationType } from './firebase';
 import { 
   collection, 
   doc, 
+  getDoc,
+  getDocs,
   setDoc, 
   deleteDoc, 
   onSnapshot 
@@ -30,7 +32,11 @@ import {
   Eye,
   Image as ImageIcon,
   Video as VideoIcon,
-  Loader2
+  Loader2,
+  Copy,
+  Check,
+  ExternalLink,
+  HelpCircle
 } from 'lucide-react';
 import { StreetVideoPlayer } from './components/StreetVideoPlayer';
 import { MediaReactions, FIXED_REACTION_EMOJIS } from './components/MediaReactions';
@@ -201,9 +207,9 @@ export default function App() {
 
   const appId = 'triotmj-3187e';
 
-  // Helper to persist a member to Firestore
-  // Helper to persist a member to Firestore (saves to both root and artifacts path)
+  // Helper to persist a member to Firestore (saves to both root and artifacts path, stripping any legacy Base64)
   const persistMemberToFirestore = async (member: SquadMember) => {
+    const isBase64Avatar = member.customAvatar?.startsWith('data:');
     const cleanMember: SquadMember = {
       id: member.id,
       name: member.name,
@@ -211,12 +217,12 @@ export default function App() {
       role: member.role || '',
       color: member.color,
       password: member.password ?? null,
-      customAvatar: member.customAvatar ?? null
+      customAvatar: isBase64Avatar ? null : (member.customAvatar ?? null)
     };
     try {
       await setDoc(doc(db, 'tmj_members', member.id), cleanMember, { merge: true }).catch(() => null);
       const memberRef = doc(db, 'artifacts', appId, 'public', 'data', 'tmj_members', member.id);
-      await setDoc(memberRef, cleanMember, { merge: true });
+      await setDoc(memberRef, cleanMember, { merge: true }).catch(() => null);
     } catch (err) {
       handleFirestoreError(err, OperationType.WRITE, `tmj_members/${member.id}`);
     }
@@ -224,7 +230,58 @@ export default function App() {
 
   // Seeding guard refs to prevent infinite loop triggers
   const isMembersSeededRef = useRef(false);
-  const isVaultSeededRef = useRef(false);
+  const isMigrationRunningRef = useRef(false);
+
+  // Wipe all legacy Firestore data and rebuild Trio TMJ structure under the new terms (midiaUrl + Cloud Storage)
+  const purgeAndRebuildFirestoreNewTerms = async () => {
+    const collectionsToClear = [
+      collection(db, 'tmj_vault'),
+      collection(db, 'tmj_chat'),
+      collection(db, 'tmj_vault_chunks'),
+      collection(db, 'artifacts', appId, 'public', 'data', 'tmj_vault'),
+      collection(db, 'artifacts', appId, 'public', 'data', 'tmj_chat'),
+      collection(db, 'artifacts', appId, 'public', 'data', 'tmj_vault_chunks')
+    ];
+
+    for (const colRef of collectionsToClear) {
+      try {
+        const snap = await getDocs(colRef);
+        for (const d of snap.docs) {
+          await deleteDoc(d.ref).catch(() => null);
+        }
+      } catch {
+        // Ignore if collection does not exist
+      }
+    }
+
+    // Re-seed clean Trio TMJ members under the new terms
+    for (const m of DEFAULT_SQUAD) {
+      await persistMemberToFirestore(m);
+    }
+    setSquadMembers(DEFAULT_SQUAD);
+    setVaultItems([]);
+
+    // Welcome message in Resenha confirming new terms
+    const welcomeMsg: ChatMessage = {
+      id: 'msg_init_terms_v3',
+      authorId: 't1',
+      authorName: 'TIAGO',
+      authorColor: 'var(--color-acid)',
+      text: 'Banco Trio TMJ recriado do zero nos novos termos (Cloud Storage + midiaUrl)! 🔥',
+      timestamp: Date.now()
+    };
+    await setDoc(doc(db, 'tmj_chat', welcomeMsg.id), welcomeMsg).catch(() => null);
+    await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'tmj_chat', welcomeMsg.id), welcomeMsg).catch(() => null);
+    setChatMessages([welcomeMsg]);
+
+    // Record migration completion in Firestore
+    await setDoc(doc(db, 'tmj_meta', 'terms_v3_clean'), {
+      completed: true,
+      version: 'v3_cloud_storage_midiaUrl',
+      projectId: appId,
+      updatedAt: Date.now()
+    }).catch(() => null);
+  };
 
   // Dynamic visual viewport detection for mobile virtual keyboard
   useEffect(() => {
@@ -240,7 +297,7 @@ export default function App() {
         setVirtualKeyboardHeight(keyboardOffset);
       } else {
         setVirtualKeyboardHeight(0);
-        if ( document.activeElement?.id !== 'chat-input') {
+        if (document.activeElement?.id !== 'chat-input') {
           setIsChatInputFocused(false);
         }
       }
@@ -255,161 +312,116 @@ export default function App() {
     };
   }, []);
 
-  // 1. Initial Firestore Setup & Real-time Listeners (with loop guards & root dual-sync)
+  // 1. Initial Firestore Setup, One-Time Legacy Wipe & Real-time Listeners (with loop guards)
   useEffect(() => {
     if (!auth.currentUser) {
       signInAnonymously(auth).catch(() => null);
     }
 
-    // Members sync: listens to artifacts or root, auto-seeds clean members if empty
-    const membersColRef = collection(db, 'artifacts', appId, 'public', 'data', 'tmj_members');
-    const unsubMembers = onSnapshot(membersColRef, async (snap) => {
-      if (snap.empty) {
-        setSquadMembers(DEFAULT_SQUAD);
-        if (!isMembersSeededRef.current) {
-          isMembersSeededRef.current = true;
-          for (const m of DEFAULT_SQUAD) {
-            await persistMemberToFirestore(m);
+    let unsubMembers: (() => void) | null = null;
+    let unsubVault: (() => void) | null = null;
+    let unsubChat: (() => void) | null = null;
+    let isCancelled = false;
+
+    const initFirestoreAndListeners = async () => {
+      // Check if one-time wipe & rebuild under new terms has been executed
+      if (!isMigrationRunningRef.current) {
+        isMigrationRunningRef.current = true;
+        try {
+          const metaSnap = await getDoc(doc(db, 'tmj_meta', 'terms_v3_clean'));
+          if (!metaSnap.exists()) {
+            await purgeAndRebuildFirestoreNewTerms();
           }
+        } catch {
+          // Proceed to attach listeners even if offline
         }
-      } else {
-        isMembersSeededRef.current = true;
-        const loaded = snap.docs.map((d) => ({ ...d.data(), id: d.id } as SquadMember));
-        setSquadMembers((prev) => {
-          const updated = [...prev];
-          loaded.forEach((m) => {
-            const idx = updated.findIndex((x) => x.id === m.id);
-            if (idx !== -1) {
-              updated[idx] = { ...updated[idx], ...m };
-            } else {
-              updated.push(m);
-            }
-          });
-          return updated;
-        });
       }
-    }, (err) => {
-      handleFirestoreError(err, OperationType.LIST, 'tmj_members');
-    });
 
-    // Vault sync: listens to vault drops, auto-seeds clean drops under new terms if database is empty
-    const vaultColRef = collection(db, 'artifacts', appId, 'public', 'data', 'tmj_vault');
-    const unsubVault = onSnapshot(vaultColRef, async (snap) => {
-      if (snap.empty) {
-        // Default drops under new terms (clean public URLs + midiaUrl)
-        const initialDropsToSeed: VaultItem[] = [
-          {
-            id: 'drop_init_1',
-            authorId: 't1',
-            authorName: 'TIAGO',
-            authorColor: 'var(--color-acid)',
-            type: 'image',
-            url: 'https://images.unsplash.com/photo-1552374196-1ab2a1c593e8?auto=format&fit=crop&q=80&w=800',
-            midiaUrl: 'https://images.unsplash.com/photo-1552374196-1ab2a1c593e8?auto=format&fit=crop&q=80&w=800',
-            caption: 'Fit check noturno. Moletom pesado, cargo cinza e Jordan 4 Black Cat na Roosevelt.',
-            timestamp: Date.now() - 3600000,
-            comments: [
-              { author: 'JORGE', color: 'var(--color-urbanOrange)', text: 'Pesado demais mano, o caimento ficou brabo!', time: '14:35' },
-              { author: 'MARCUS', color: 'var(--color-sprayCyan)', text: 'A iluminação da Roosevelt tá surreal pra shoot', time: '14:40' }
-            ],
-            reactions: { '🔥': 3, '😎': 2 },
-            reactedBy: { '🔥': ['t1', 'm3', 'j2'], '😎': ['t1', 'm3'] },
-            deviceReactions: { 't1': '🔥', 'm3': '🔥', 'j2': '🔥' }
-          },
-          {
-            id: 'drop_init_2',
-            authorId: 'm3',
-            authorName: 'MARCUS',
-            authorColor: 'var(--color-sprayCyan)',
-            type: 'video',
-            url: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4',
-            midiaUrl: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4',
-            caption: 'Take gravado no corrimão duplo. Linha perfeita em VHS.',
-            timestamp: Date.now() - 7200000,
-            comments: [
-              { author: 'TIAGO', color: 'var(--color-acid)', text: 'Esse ângulo ficou perfeito 🔥', time: '16:00' }
-            ],
-            reactions: { '💪': 2, '🔥': 4 },
-            reactedBy: { '💪': ['t1', 'j2'], '🔥': ['m3', 't1', 'j2'] },
-            deviceReactions: { 'm3': '🔥', 't1': '🔥', 'j2': '💪' }
-          },
-          {
-            id: 'drop_init_3',
-            authorId: 'j2',
-            authorName: 'JORGE',
-            authorColor: 'var(--color-urbanOrange)',
-            type: 'image',
-            url: 'https://images.unsplash.com/photo-1579783900882-c0d3dad7b119?auto=format&fit=crop&q=80&w=800',
-            midiaUrl: 'https://images.unsplash.com/photo-1579783900882-c0d3dad7b119?auto=format&fit=crop&q=80&w=800',
-            caption: 'Painel novo que encontramos na linha do trem. Textura insana pra clipe.',
-            timestamp: Date.now() - 10800000,
-            comments: [
-              { author: 'MARCUS', color: 'var(--color-sprayCyan)', text: 'Textura surreal pra shoot!', time: '17:15' }
-            ],
-            reactions: { '❤️': 3 },
-            reactedBy: { '❤️': ['j2', 't1', 'm3'] },
-            deviceReactions: { 'j2': '❤️', 't1': '❤️', 'm3': '❤️' }
-          }
-        ];
+      if (isCancelled) return;
 
-        setVaultItems(initialDropsToSeed);
-
-        if (!isVaultSeededRef.current) {
-          isVaultSeededRef.current = true;
-          for (const drop of initialDropsToSeed) {
-            try {
-              // Save to both root tmj_vault and artifacts path
-              await setDoc(doc(db, 'tmj_vault', drop.id), drop).catch(() => null);
-              await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'tmj_vault', drop.id), drop).catch(() => null);
-            } catch (seedErr) {
-              console.warn('Could not auto-seed drop:', seedErr);
+      // Members sync: listens to root tmj_members, auto-seeds clean Trio TMJ members if empty
+      const membersColRef = collection(db, 'tmj_members');
+      unsubMembers = onSnapshot(membersColRef, async (snap) => {
+        if (snap.empty) {
+          setSquadMembers(DEFAULT_SQUAD);
+          if (!isMembersSeededRef.current) {
+            isMembersSeededRef.current = true;
+            for (const m of DEFAULT_SQUAD) {
+              await persistMemberToFirestore(m);
             }
           }
+        } else {
+          isMembersSeededRef.current = true;
+          const loaded = snap.docs.map((d) => ({ ...d.data(), id: d.id } as SquadMember));
+          setSquadMembers((prev) => {
+            const updated = [...prev];
+            loaded.forEach((m) => {
+              const idx = updated.findIndex((x) => x.id === m.id);
+              if (idx !== -1) {
+                updated[idx] = { ...updated[idx], ...m };
+              } else {
+                updated.push(m);
+              }
+            });
+            return updated;
+          });
         }
-      } else {
-        isVaultSeededRef.current = true;
-        const items = snap.docs.map((d) => {
+      }, (err) => {
+        handleFirestoreError(err, OperationType.LIST, 'tmj_members');
+      });
+
+      // Vault sync: listens to root tmj_vault under new terms (midiaUrl)
+      const vaultColRef = collection(db, 'tmj_vault');
+      unsubVault = onSnapshot(vaultColRef, (snap) => {
+        if (snap.empty) {
+          setVaultItems([]);
+        } else {
+          const items = snap.docs.map((d) => {
+            const data = d.data();
+            const effectiveUrl = data.midiaUrl || data.url || '';
+            return {
+              ...data,
+              docId: d.id,
+              url: effectiveUrl,
+              midiaUrl: effectiveUrl
+            } as VaultItem;
+          });
+          items.sort((a, b) => b.timestamp - a.timestamp);
+          setVaultItems(items);
+        }
+      }, (err) => {
+        handleFirestoreError(err, OperationType.LIST, 'tmj_vault');
+      });
+
+      // Chat sync: listens to root tmj_chat under new terms (midiaUrl)
+      const chatColRef = collection(db, 'tmj_chat');
+      unsubChat = onSnapshot(chatColRef, (snap) => {
+        const msgs = snap.docs.map((d) => {
           const data = d.data();
-          const effectiveUrl = data.midiaUrl || data.url || '';
+          const effectiveMedia = data.midiaUrl || data.mediaUrl;
+          const effectiveAudio = data.audioUrl;
           return {
             ...data,
             docId: d.id,
-            url: effectiveUrl,
-            midiaUrl: effectiveUrl
-          } as VaultItem;
+            mediaUrl: effectiveMedia,
+            audioUrl: effectiveAudio,
+            midiaUrl: effectiveMedia || effectiveAudio
+          } as ChatMessage;
         });
-        items.sort((a, b) => b.timestamp - a.timestamp);
-        setVaultItems(items);
-      }
-    }, (err) => {
-      handleFirestoreError(err, OperationType.LIST, 'tmj_vault');
-    });
-
-    // Chat sync
-    const chatColRef = collection(db, 'artifacts', appId, 'public', 'data', 'tmj_chat');
-    const unsubChat = onSnapshot(chatColRef, (snap) => {
-      const msgs = snap.docs.map((d) => {
-        const data = d.data();
-        const effectiveMedia = data.midiaUrl || data.mediaUrl;
-        const effectiveAudio = data.audioUrl;
-        return {
-          ...data,
-          docId: d.id,
-          mediaUrl: effectiveMedia,
-          audioUrl: effectiveAudio,
-          midiaUrl: effectiveMedia || effectiveAudio
-        } as ChatMessage;
+        msgs.sort((a, b) => a.timestamp - b.timestamp);
+        setChatMessages(msgs);
+      }, (err) => {
+        handleFirestoreError(err, OperationType.LIST, 'tmj_chat');
       });
-      msgs.sort((a, b) => a.timestamp - b.timestamp);
-      setChatMessages(msgs);
-    }, (err) => {
-      handleFirestoreError(err, OperationType.LIST, 'tmj_chat');
-    });
+    };
+
+    initFirestoreAndListeners();
 
     return () => {
-      unsubMembers();
-      unsubVault();
-      unsubChat();
+      isCancelled = true;
+      if (unsubMembers) unsubMembers();
+      if (unsubVault) unsubVault();
+      if (unsubChat) unsubChat();
     };
   }, []);
 
@@ -1022,96 +1034,13 @@ export default function App() {
     setIsSquadModalOpen(false);
   };
 
-  // Reseed / Recriar dados limpos do Trio TMJ no Firestore sob novos termos
+  // Limpar todos os dados antigos e recriar banco do Trio TMJ no Firestore sob novos termos
   const handleResetAndReseedDatabase = async () => {
-    if (!confirm('Deseja recriar o banco do Trio TMJ com as novas configurações (membros padrão, drops e resenha limpos)?')) return;
     try {
-      // 1. Re-seed Members
-      for (const m of DEFAULT_SQUAD) {
-        await persistMemberToFirestore(m);
-      }
-      setSquadMembers(DEFAULT_SQUAD);
-
-      // 2. Re-seed Vault Drops
-      const initialDropsToSeed: VaultItem[] = [
-        {
-          id: 'drop_init_1',
-          authorId: 't1',
-          authorName: 'TIAGO',
-          authorColor: 'var(--color-acid)',
-          type: 'image',
-          url: 'https://images.unsplash.com/photo-1552374196-1ab2a1c593e8?auto=format&fit=crop&q=80&w=800',
-          midiaUrl: 'https://images.unsplash.com/photo-1552374196-1ab2a1c593e8?auto=format&fit=crop&q=80&w=800',
-          caption: 'Fit check noturno. Moletom pesado, cargo cinza e Jordan 4 Black Cat na Roosevelt.',
-          timestamp: Date.now() - 3600000,
-          comments: [
-            { author: 'JORGE', color: 'var(--color-urbanOrange)', text: 'Pesado demais mano, o caimento ficou brabo!', time: '14:35' },
-            { author: 'MARCUS', color: 'var(--color-sprayCyan)', text: 'A iluminação da Roosevelt tá surreal pra shoot', time: '14:40' }
-          ],
-          reactions: { '🔥': 3, '😎': 2 },
-          reactedBy: { '🔥': ['t1', 'm3', 'j2'], '😎': ['t1', 'm3'] },
-          deviceReactions: { 't1': '🔥', 'm3': '🔥', 'j2': '🔥' }
-        },
-        {
-          id: 'drop_init_2',
-          authorId: 'm3',
-          authorName: 'MARCUS',
-          authorColor: 'var(--color-sprayCyan)',
-          type: 'video',
-          url: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4',
-          midiaUrl: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4',
-          caption: 'Take gravado no corrimão duplo. Linha perfeita em VHS.',
-          timestamp: Date.now() - 7200000,
-          comments: [
-            { author: 'TIAGO', color: 'var(--color-acid)', text: 'Esse ângulo ficou perfeito 🔥', time: '16:00' }
-          ],
-          reactions: { '💪': 2, '🔥': 4 },
-          reactedBy: { '💪': ['t1', 'j2'], '🔥': ['m3', 't1', 'j2'] },
-          deviceReactions: { 'm3': '🔥', 't1': '🔥', 'j2': '💪' }
-        },
-        {
-          id: 'drop_init_3',
-          authorId: 'j2',
-          authorName: 'JORGE',
-          authorColor: 'var(--color-urbanOrange)',
-          type: 'image',
-          url: 'https://images.unsplash.com/photo-1579783900882-c0d3dad7b119?auto=format&fit=crop&q=80&w=800',
-          midiaUrl: 'https://images.unsplash.com/photo-1579783900882-c0d3dad7b119?auto=format&fit=crop&q=80&w=800',
-          caption: 'Painel novo que encontramos na linha do trem. Textura insana pra clipe.',
-          timestamp: Date.now() - 10800000,
-          comments: [
-            { author: 'MARCUS', color: 'var(--color-sprayCyan)', text: 'Textura surreal pra shoot!', time: '17:15' }
-          ],
-          reactions: { '❤️': 3 },
-          reactedBy: { '❤️': ['j2', 't1', 'm3'] },
-          deviceReactions: { 'j2': '❤️', 't1': '❤️', 'm3': '❤️' }
-        }
-      ];
-
-      for (const drop of initialDropsToSeed) {
-        await setDoc(doc(db, 'tmj_vault', drop.id), drop).catch(() => null);
-        await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'tmj_vault', drop.id), drop).catch(() => null);
-      }
-      setVaultItems(initialDropsToSeed);
-
-      // 3. Re-seed Welcome Chat Message
-      const welcomeMsg: ChatMessage = {
-        id: 'msg_init_welcome',
-        authorId: 't1',
-        authorName: 'TIAGO',
-        authorColor: 'var(--color-acid)',
-        text: 'Salve rapaziada! Banco TMJ sincronizado com sucesso nos novos termos 🔥',
-        timestamp: Date.now()
-      };
-      await setDoc(doc(db, 'tmj_chat', welcomeMsg.id), welcomeMsg).catch(() => null);
-      await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'tmj_chat', welcomeMsg.id), welcomeMsg).catch(() => null);
-      setChatMessages([welcomeMsg]);
-
-      alert('Banco TMJ recriado e sincronizado com sucesso!');
+      await purgeAndRebuildFirestoreNewTerms();
       setIsSquadModalOpen(false);
     } catch (err) {
       console.error('Erro ao recriar banco:', err);
-      alert('Erro ao recriar banco de dados.');
     }
   };
 
@@ -2137,7 +2066,7 @@ export default function App() {
                   type="button"
                   disabled={isUploadingMedia || !pendingUploadData}
                   onClick={submitVaultDrop}
-                  className="w-full bg-acid text-asphalt font-display text-xl tracking-widest py-3 rounded-sm border-2 border-asphalt shadow-[4px_4px_0px_var(--color-asphalt)] active:translate-y-1 active:shadow-[1px_1px_0px_var(--color-asphalt)] transition-all cursor-pointer font-bold disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                  className="w-full bg-acid text-asphalt font-display text-xl tracking-widest py-3 rounded-sm border-2 border-asphalt shadow-[4px_4px_0px_var(--color-asphalt)] active:translate-y-1 active:shadow-[1px_1px_0px_var(--color-asphalt)] transition-all cursor-pointer font-bold disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 mb-3"
                 >
                   {isUploadingMedia ? (
                     <>
@@ -2148,6 +2077,17 @@ export default function App() {
                     <span>PUBLICAR NA MÍDIA</span>
                   )}
                 </button>
+
+                {/* Status do Storage: Supabase Ativo */}
+                <div className="border-t border-bunker pt-2.5">
+                  <div className="flex items-center justify-between text-[10px] font-mono text-sprayCyan bg-asphalt/80 border border-sprayCyan/30 p-2 rounded-xs">
+                    <span className="flex items-center gap-1.5 font-bold">
+                      <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+                      <span>STORAGE: SUPABASE (TMJ-MEDIA) ATIVO</span>
+                    </span>
+                    <span className="text-[9px] text-stencil uppercase">100% Gratuito</span>
+                  </div>
+                </div>
               </div>
             </div>
           )}
